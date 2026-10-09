@@ -14,7 +14,7 @@
 //+------------------------------------------------------------------+
 #property copyright   "Mr. CapFree"
 #property link        "https://example.com"
-#property version     "6.730"   // Broker-data chart panel + carryover performance
+#property version     "6.740"   // Broker-data chart panel + carryover performance
 #property description "gold X9 Full Focus design 4 + four themes + broker-data chart"
 #property strict
 #include <Canvas\Canvas.mqh>
@@ -648,8 +648,7 @@ void PanelLevelLabels(PanelLevel &levels[])
       if(counts[row]>1) label+=" x"+IntegerToString(counts[row]);
       int y=g_pcTop+2+row*16,x=g_pcRight-12-g_pc.TextWidth(label);
       color ink=PanelLevelColor(kinds[row]);
-      // A short leader preserves the exact level when text is shifted to a free slot.
-      g_pc.Line(g_pcRight-156,anchors[row],g_pcRight-148,y+6,ColorToARGB(ink));
+      // Text only: no diagonal connectors. Horizontal order lines retain exact prices.
       g_pc.FillRectangle(x-2,y-1,g_pcRight-10,y+12,ColorToARGB(UiPanel()));
       PanelText(x,y,label,ink);
      }
@@ -1676,7 +1675,7 @@ int OnInit()
    PanelDraw(true);
    if(PanelEnabled()) EventSetTimer(1);
 
-   Print("gold_x9 v6.73 (MQL4) initialised on ", activeTradeSymbol, " digits=", activeSymbolDigits, " point=", DoubleToString(activeSymbolPoint, activeSymbolDigits), " result boxes=removed", " hud=", (showDashboardPanel ? "on" : "off"));
+   Print("gold_x9 v6.74 (MQL4) initialised on ", activeTradeSymbol, " digits=", activeSymbolDigits, " point=", DoubleToString(activeSymbolPoint, activeSymbolDigits), " result boxes=removed", " hud=", (showDashboardPanel ? "on" : "off"));
    return(INIT_SUCCEEDED);
   }
 

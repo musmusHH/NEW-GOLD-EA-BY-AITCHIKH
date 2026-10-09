@@ -1,4 +1,4 @@
-# X9 Full Focus — design 4 / v6.730
+# X9 Full Focus — design 4 / v6.740
 
 Implements the selected **Graphite Full Focus** layout with four complete palettes:
 
@@ -24,7 +24,7 @@ Click **THEME: GRAPHITE >** in the top-right header to cycle through all four. I
 
 The chart uses actual broker candles/quotes. Net values retain the existing commission-estimate convention. TP/SL/TRAIL estimates, trailing-update confirmation, order matching, closed-only equity history, and native-chart hiding/restoration remain in effect.
 
-## Chart navigation — v6.730
+## Chart navigation — v6.740
 
 The symbol/timeframe and all ten chart controls are in the upper header, not over the candle plot. At widths of 1180 pixels or more, they share the first header row and free 32 pixels for candles. Narrower supported windows use a second header row without reducing the previous candle-plot height.
 
@@ -48,7 +48,7 @@ The layout uses actual chart-client dimensions, not the full desktop resolution.
 
 At less than 800×400, the EA shows a resize notice and falls back to the native chart rather than drawing an overlapping fixed-size dashboard. Trading logic continues unchanged. Long values are shortened only for display; hover shows full text. Minimize/restore and theme changes rebuild visual resources, not strategy state.
 
-## Tester / Terminal resize and result-box removal — v6.730
+## Tester / Terminal resize and result-box removal — v6.740
 
 The old 560-pixel minimum caused the native chart to replace Full Focus when opening the Tester or Terminal. For chart heights of **400–559 pixels**, Full Focus now uses shorter summary cards and an 80-pixel TRADE TRACKER with one row (OPEN LIVE when positions exist, otherwise the most recent closed day). The trade table reduces its row count and remains pageable. Larger heights automatically restore the full tracker. The equity curve is drawn only when its dock has enough room.
 
@@ -90,10 +90,14 @@ The entry, sizing, pending-expiry, open-position management, strategy-tick and d
 
 7. Enable MOVE, drag in all directions, try CENTER and both zoom axes. Verify the quote updates without resetting manual placement; LIVE restores auto scaling. Check the toolbar at wide and compact sizes and verify mouse scrolling is restored when MOVE/panel is disabled.
 
-## Small price-level labels — v6.730
+## Small price-level labels — v6.740
 
 The right side of the candle plot now shows borderless, small type labels, before the price axis: BUY (green), SELL (red), PENDING BUY (amber), PENDING SELL (purple), TP (blue), SL (orange). Entry lines use type colors rather than floating-profit colors; live P/L colors in the trade table are unchanged. Light theme uses darker accents.
 
-Labels use non-overlapping 16-pixel rows. Nearby same-type levels are grouped with an `xN` count; short leaders indicate the original price position. Actual order lines remain at exact prices. Only in-range levels are labeled. If the available rows fill, `+N levels` explicitly indicates additional levels; the panel tooltip and trade table retain order details. Labels are not profit-result boxes and do not change orders or stops.
+Labels use non-overlapping 16-pixel rows. Nearby same-type levels are grouped with an `xN` count; no diagonal connectors are drawn. Actual order lines remain at exact prices. Only in-range levels are labeled. If the available rows fill, `+N levels` explicitly indicates additional levels; the panel tooltip and trade table retain order details. Labels are not profit-result boxes and do not change orders or stops.
 
 Regression checks cover coincident labels, six distinct colors, grouping, overflow, offscreen exclusion, bounds and row separation. Native MetaEditor compilation and visual demo testing remain required.
+
+### v6.740 cleanup
+
+Removed the diagonal label-to-price connectors that became visually tangled around clustered levels. Non-overlapping colored text, grouped counts, overflow indicators and exact horizontal price lines are unchanged.

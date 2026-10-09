@@ -357,6 +357,12 @@ int main(){
         self.assertGreater(record, success)
         self.assertIn('if(trailChanged && newSL>0', management[success:record])
 
+    def test_level_labels_have_no_connectors(self):
+        labels = SOURCE.split('void PanelLevelLabels(')[1].split('string PanelOrderName(')[0]
+        self.assertNotIn('g_pc.Line(', labels)
+        self.assertIn('PanelText(x,y,label,ink)', labels)
+        self.assertIn('PanelDash(PanelPriceY(levels[line].price),levels[line].ink)', SOURCE)
+
     def test_result_boxes_removed(self):
         self.assertNotIn('void TagBoxCardDraw(', SOURCE)
         self.assertNotIn('bool TagDrawOne(', SOURCE)

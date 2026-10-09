@@ -1,6 +1,6 @@
 # NEW GOLD EA BY AITCHIKH — X9 Full Focus
 
-Current source: **[gold_x9_FIXED.mq4](gold_x9_FIXED.mq4)** — v6.730.
+Current source: **[gold_x9_FIXED.mq4](gold_x9_FIXED.mq4)** — v6.740.
 
 Selected layout: **design 4 / Graphite Full Focus**, with a full-width real-price chart, open-first trade table, closed-result EMA/DD curve and independent TRADE TRACKER.
 
@@ -8,7 +8,7 @@ Selected layout: **design 4 / Graphite Full Focus**, with a full-width real-pric
 
 **Chart controls:** MOVE enables drag-to-pan; CENTER centers the newest visible candle; + / − change horizontal zoom; Y+ / Y− expand/compress the vertical price scale; LIVE restores live history and automatic scaling. Symbol and controls now sit in the upper header, with 20% right-hand candle space by default.
 
-**v6.730:** Small color-coded BUY / SELL / PENDING BUY / PENDING SELL / TP / SL labels appear beside the price axis, with collision avoidance and grouped counts.
+**v6.740:** Small color-coded BUY / SELL / PENDING BUY / PENDING SELL / TP / SL labels appear beside the price axis, with collision avoidance and grouped counts.
 
 **v6.720:** Removed all EA result boxes and their drawing code. Opening Tester/Terminal now uses a compact Full Focus layout at chart heights of 400–559 pixels; minimum supported client area is 800×400. Legacy EA result boxes are cleaned up on attachment.
 
