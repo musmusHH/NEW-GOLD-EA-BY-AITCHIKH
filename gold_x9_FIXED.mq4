@@ -20,7 +20,7 @@
 //+------------------------------------------------------------------+
 #property copyright   "Mr. CapFree"
 #property link        "https://example.com"
-#property version     "6.620"   // Broker-data chart panel + carryover performance
+#property version     "6.630"   // Broker-data chart panel + carryover performance
 #property description "gold x9 MQL4 + LAB M1-M4 + live broker-data chart panel"
 #property strict
 #include <Canvas\Canvas.mqh>
@@ -154,6 +154,7 @@ input color  bullBodyColor         = C'255,255,255';    // Bull Candle Body
 input color  bullWickColor         = C'176,137,30';    // Bull Candle Wick
 input color  bearBodyColor         = C'219,181,65';     // Bear Candle Body
 input color  bearWickColor         = C'176,137,30';     // Bear Candle Wick
+input int    chartTradeRows       = 8;                // Trade table rows (1-40; limited by available chart height)
 input int    chartStartBars       = 64;               // Custom chart starting candles (16-240)
 input int    chartStartOffset     = 0;                // Starting bar offset (0 = live)
 input bool   chartStartFitOrders  = false;            // false = BARS (default), true = ALL levels
@@ -652,14 +653,13 @@ void PanelTradeTable()
    // Stable pagination even when the terminal reorders its trade pool.
    ArraySort(tickets);
    ArraySort(pendingTickets);
-   int pageRows=(g_pcH>=360)?4:((g_pcH>=290)?2:1);
-   int openPages=(ArraySize(tickets)+pageRows-1)/pageRows;
-   int pendingPages=(ArraySize(pendingTickets)+pageRows-1)/pageRows;
-   int pages=(int)MathMax(1,openPages+pendingPages);
+   // One ordered list: EVERY market position before ANY pending order.
+   int totalRows=ArraySize(tickets)+ArraySize(pendingTickets);
+   int rowCapacity=(int)MathMax(1,(g_pcH-g_pcTop-100-26-36-PC_TABLE_BOTTOM_GAP)/20);
+   int requestedRows=(int)MathMax(1,MathMin(40,chartTradeRows));
+   int pageRows=(int)MathMin(rowCapacity,MathMin(requestedRows,MathMax(1,totalRows)));
+   int pages=(int)MathMax(1,(totalRows+pageRows-1)/pageRows);
    g_pcTradePage=g_pcTradePage%pages;
-   bool showPending=(g_pcTradePage>=openPages && pendingPages>0);
-   int sectionPage=showPending ? g_pcTradePage-openPages : g_pcTradePage;
-   int sectionPages=showPending ? pendingPages : (int)MathMax(1,openPages);
    int tableTop=g_pcH-PC_TABLE_BOTTOM_GAP-(36+pageRows*20);
    g_pcBottom=tableTop-26;
    g_pc.FillRectangle(8,tableTop,g_pcW-8,g_pcH-PC_TABLE_BOTTOM_GAP+1,ColorToARGB(C'20,30,40'));
@@ -668,7 +668,7 @@ void PanelTradeTable()
    string title="TRADES "+currency+" | OPEN "+IntegerToString(ArraySize(tickets))+
                 " | PENDING "+IntegerToString(ArraySize(pendingTickets));
    PanelCell(12,tableTop+2,g_pcW-120,title,C'58,181,255');
-   string section=(showPending?"PEND ":"OPEN ")+IntegerToString(sectionPage+1)+"/"+IntegerToString(sectionPages);
+   string section="PAGE "+IntegerToString(g_pcTradePage+1)+"/"+IntegerToString(pages);
    PanelText(g_pcW-100,tableTop+2,section,clrSilver);
    int cols[6];
    cols[0]=12;
@@ -684,18 +684,11 @@ void PanelTradeTable()
    if(ArraySize(tickets)+ArraySize(pendingTickets)==0) PanelText(12,tableTop+36,"No matching trades",clrSilver);
    for(int row=0;row<pageRows;row++)
      {
-      int index=sectionPage*pageRows+row;
+      int index=g_pcTradePage*pageRows+row;
+      if(index>=totalRows) break;
       int ticket=0;
-      if(showPending)
-        {
-         if(index>=ArraySize(pendingTickets)) break;
-         ticket=pendingTickets[index];
-        }
-      else
-        {
-         if(index>=ArraySize(tickets)) break;
-         ticket=tickets[index];
-        }
+      if(index<ArraySize(tickets)) ticket=tickets[index];
+      else ticket=pendingTickets[index-ArraySize(tickets)];
       if(!OrderSelect(ticket,SELECT_BY_TICKET,MODE_TRADES) || OrderCloseTime()!=0) continue;
       string values[5];
       values[0]=IntegerToString(OrderTicket()); values[1]=PanelOrderName(OrderType());
@@ -893,7 +886,7 @@ void PanelDraw(bool force)
    if(quoted && (TimeCurrent()-tick.time>60 || nowMs-g_pcQuoteSeenMs>60000)) feed+=" (STALE)";
    // Quote status and navigation help remain accessible on hover, not over the chart.
    string status=(g_pcOffset==0?"LIVE | ":"HISTORY | ")+feed;
-   ObjectSetString(0,PC_NAME,OBJPROP_TOOLTIP,detail+"\n"+status+"\nClick the trade table for the next page: open positions first, then pending orders. LIVE returns to the first open page.");
+   ObjectSetString(0,PC_NAME,OBJPROP_TOOLTIP,detail+"\n"+status+"\nClick the trade table for the next rows: all open positions first, then pending orders. LIVE returns to the beginning. Set chartTradeRows to change visible rows.");
    g_pc.Update();
   }
 
@@ -1858,7 +1851,7 @@ int OnInit()
    PanelDraw(true);
    if(PanelEnabled()) EventSetTimer(1);
 
-   Print("gold_x9 v6.62 (MQL4) initialised on ", activeTradeSymbol, " digits=", activeSymbolDigits, " point=", DoubleToString(activeSymbolPoint, activeSymbolDigits), " tags=", (drawResultTags ? "on" : "off"), " hud=", (showDashboardPanel ? "on" : "off"));
+   Print("gold_x9 v6.63 (MQL4) initialised on ", activeTradeSymbol, " digits=", activeSymbolDigits, " point=", DoubleToString(activeSymbolPoint, activeSymbolDigits), " tags=", (drawResultTags ? "on" : "off"), " hud=", (showDashboardPanel ? "on" : "off"));
    return(INIT_SUCCEEDED);
   }
 

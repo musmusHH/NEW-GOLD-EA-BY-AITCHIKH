@@ -1,4 +1,4 @@
-# Live broker-data chart panel — v6.620
+# Live broker-data chart panel — v6.630
 
 ## Install
 
@@ -106,3 +106,12 @@ The TRADES money table no longer interleaves active positions and pending orders
 The table header shows explicit `OPEN` and `PENDING` totals. A compact `OPEN 1/1` or `PEND 1/4` indicator identifies the section/page (not an order limit). Click the table to move through pages; **LIVE** returns both the chart and table to their starting live/open view. No footer text or paging button has been reintroduced.
 
 The per-ticket live P/L, TP and SL amounts and reporting filter are unchanged. Regression coverage includes four newer active tickets with thirteen older pending tickets, pending-only and empty accounts, paging and returning to LIVE.
+
+
+## v6.630 — one continuous open-first list (supersedes separate pages)
+
+TRADES now renders one list in this order: **all matching open BUY/SELL positions, then all matching pending orders**. There is no forced page break between the groups. Thus four open positions followed by older pending orders appear as four open rows first, then pending rows on the same page when space permits.
+
+`chartTradeRows` defaults to **8** and can be set from 1 to 40. The table uses fewer rows for a short list and caps its height to preserve at least 100 pixels of candle plot when enough space is available. More table rows leave less room for candles. If the list cannot fit, clicking the table advances through the remaining rows; the header shows `PAGE n/m`, plus separate OPEN and PENDING totals. LIVE returns to page one. Reporting filters and trading logic are unchanged.
+
+Tests verify the rendered ticket sequence with four newer open tickets and thirteen older pending tickets, not merely the totals. MetaEditor compilation and terminal verification are still required.

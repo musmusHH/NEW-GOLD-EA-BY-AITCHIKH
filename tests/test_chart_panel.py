@@ -40,6 +40,7 @@ CHART_COLOR_CHART_DOWN=23,CHART_COLOR_CANDLE_BULL=24,CHART_COLOR_CANDLE_BEAR=25,
 CHART_COLOR_CHART_LINE=26,CHART_COLOR_BID=27,CHART_COLOR_ASK=28,CHART_COLOR_STOP_LEVEL=29,
 CHART_COLOR_VOLUME=30,CHART_COLOR_GRID=31,CHART_SHOW_PRICE_SCALE=32,CHART_SHOW_DATE_SCALE=33,CHART_SHOW_OHLC=34;
 bool hideOriginalChart=true;
+int chartTradeRows=8;
 color UiPanel(){return 0x1f262e;}
 #define RGB(r,g,b) ((r<<16)|(g<<8)|b)
 const color clrSilver=0xaaaaaa,clrWhite=0xffffff;
@@ -157,7 +158,7 @@ int main(){
  mockTickSize=0;assert(PanelExitMoney(4200)=="N/A");mockTickSize=0.01;
  PanelDraw(true);
  assert(contains("LIVE $"));assert(contains("TP~ $"));assert(contains("SL~ $"));
- assert(contains("+19.83"));assert(contains("-20.17"));assert(!contains("Pending"));assert(contains("OPEN 1/1"));
+ assert(contains("+19.83"));assert(contains("-20.17"));assert(contains("Pending"));assert(contains("PAGE 1/1"));
  accountCurrency="EUR";PanelDraw(true);assert(contains("LIVE EUR"));accountCurrency="USD";
  assert(g_pcReady);assert(chart[1]==0 && chart[2]==0);
  assert(masks["old_result_box"]==0&&masks["manual_line"]==0);
@@ -167,9 +168,9 @@ int main(){
  assert(chart[CHART_SHOW_PRICE_SCALE]==0);
  assert(chart[CHART_COLOR_CHART_UP]==UiPanel());
  // The table is bottom-anchored; the removed footer adds 44 pixels to candles.
- int oldBottom=g_pcH-52-(36+4*20)-26;
+ int oldBottom=g_pcH-52-(36+2*20)-26;
  assert(g_pcBottom==oldBottom+44);
- assert(g_pcBottom+26+36+4*20==g_pcH-PC_TABLE_BOTTOM_GAP);
+ assert(g_pcBottom+26+36+2*20==g_pcH-PC_TABLE_BOTTOM_GAP);
  assert(g_pcLow<4140 && g_pcHigh>4200);
  assert(objects[PC_NAME].find("LIVE |")!=string::npos);assert(contains("BUY"));
  assert(objects[PC_NAME].find("SELL STOP")!=string::npos);
@@ -192,17 +193,23 @@ int main(){
  for(int i=0;i<13;i++)orders.push_back({OP_SELLSTOP,"XAUUSD",123457,4155,4190,4140,0,100+i});
  for(int i=0;i<4;i++)orders.push_back({i?OP_SELL:OP_BUY,"XAUUSD",123457,4180,4160,4200,1.5,1000+i});
  g_pcTradePage=0;PanelDraw(true);
- assert(contains("OPEN 4 | PENDING 13"));assert(contains("OPEN 1/1"));
+ assert(contains("OPEN 4 | PENDING 13"));assert(contains("PAGE 1/3"));
  for(int i=0;i<4;i++)assert(contains(to_string(1000+i)));
- assert(!contains("Pending"));
+ assert(contains("Pending"));
+ // Check actual rendered row ordering, not just presence in a tooltip.
+ vector<string> shownTickets;
+ for(auto text:g_pc.text)
+    if(text=="1000"||text=="1001"||text=="1002"||text=="1003"||text=="100"||text=="101"||text=="102"||text=="103") shownTickets.push_back(text);
+ assert((shownTickets==vector<string>{"1000","1001","1002","1003","100","101","102","103"}));
  clockMs+=300;PanelTableClick(g_pcX+20,g_pcY+g_pcBottom+30);
- assert(contains("PEND 1/4"));assert(contains("Pending"));
- PanelClick(PC_BUTTON+"live");assert(g_pcTradePage==0);assert(contains("OPEN 1/1"));
+ assert(contains("PAGE 2/3"));assert(contains("Pending"));
+ PanelClick(PC_BUTTON+"live");assert(g_pcTradePage==0);assert(contains("PAGE 1/3"));
  // Pending-only and empty accounts must still have a usable first page.
  orders.resize(13);g_pcTradePage=0;PanelDraw(true);
- assert(contains("OPEN 0 | PENDING 13"));assert(contains("PEND 1/4"));assert(contains("Pending"));
+ assert(contains("OPEN 0 | PENDING 13"));assert(contains("PAGE 1/2"));assert(contains("Pending"));
  orders.clear();g_pcTradePage=0;PanelDraw(true);assert(contains("No matching trades"));
  orders=savedOrders;clockMs+=300;
+ chartTradeRows=4; // Keep the existing smaller-row pagination checks.
  // Dense levels must paginate without exceeding the canvas bounds.
  for(int i=0;i<20;i++)orders.push_back(orders[0]);
  PanelDraw(true);
