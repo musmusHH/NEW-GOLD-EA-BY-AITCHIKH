@@ -21,6 +21,7 @@ class ChartPanelTests(unittest.TestCase):
         panel = panel.replace('#define PC_BUTTON "GX9PC_btn_"', 'const string PC_BUTTON="GX9PC_btn_";')
         panel = panel.replace('text+=" "+', 'text+=string(" ")+')
         panel = panel.replace('int tickets[];', 'vector<int> tickets;')
+        panel = panel.replace('int pendingTickets[];', 'vector<int> pendingTickets;')
         panel = panel.replace('string g_pcHiddenObjects[];', 'vector<string> g_pcHiddenObjects;')
         panel = panel.replace('long g_pcHiddenMasks[];', 'vector<long> g_pcHiddenMasks;')
         stub = r'''
@@ -99,10 +100,10 @@ int iBars(string,int){return barsAvailable;}
 int iBarShift(string,int,datetime time,bool){return int((latest-time)/300);}
 int CopyRates(string,int,int offset,int n,vector<MqlRates>& r){n=min(n,max(0,barsAvailable-offset));r.resize(n);for(int i=0;i<n;i++)r[i]={latest-(offset+i)*300,4180,4185,4178,4183};return n;}
 bool SymbolInfoTick(string,MqlTick &t){t={latest,4184,4184.8};return quoteOK;}
-struct Order {int type;string symbol;int magic;double entry,sl,tp,profit;};
+struct Order {int type;string symbol;int magic;double entry,sl,tp,profit;int ticket=0;};
 vector<Order> orders;Order selected;
 int OrdersTotal(){return orders.size();}
-bool OrderSelect(int i,int mode,int){if(mode==SELECT_BY_TICKET){for(auto o:orders)if(12345678+o.type==i){selected=o;return true;}return false;}selected=orders[i];return true;}
+bool OrderSelect(int i,int mode,int){if(mode==SELECT_BY_TICKET){for(auto o:orders)if((o.ticket?o.ticket:12345678+o.type)==i){selected=o;return true;}return false;}selected=orders[i];return true;}
 string OrderSymbol(){return selected.symbol;}
 string accountCurrency="USD";
 string AccountCurrency(){return accountCurrency;}
@@ -111,7 +112,7 @@ double mockTickSize=0.01,mockTickValue=1;
 double SymbolInfoDouble(string,int prop){return prop==1?mockTickSize:mockTickValue;}
 int OrderCloseTime(){return 0;}
 bool IsMatchingOrderIdentity(){return selected.symbol==activeTradeSymbol && selected.magic==123457;}
-int OrderType(){return selected.type;}int OrderTicket(){return 12345678+selected.type;}
+int OrderType(){return selected.type;}int OrderTicket(){return selected.ticket?selected.ticket:12345678+selected.type;}
 double OrderProfit(){return selected.profit;}double OrderSwap(){return -0.1;}
 double OrderLots(){return 0.01;}double CommissionCost(double lots){return lots*7;}
 double OrderOpenPrice(){return selected.entry;}double OrderStopLoss(){return selected.sl;}double OrderTakeProfit(){return selected.tp;}
@@ -156,7 +157,7 @@ int main(){
  mockTickSize=0;assert(PanelExitMoney(4200)=="N/A");mockTickSize=0.01;
  PanelDraw(true);
  assert(contains("LIVE $"));assert(contains("TP~ $"));assert(contains("SL~ $"));
- assert(contains("+19.83"));assert(contains("-20.17"));assert(contains("Pending"));
+ assert(contains("+19.83"));assert(contains("-20.17"));assert(!contains("Pending"));assert(contains("OPEN 1/1"));
  accountCurrency="EUR";PanelDraw(true);assert(contains("LIVE EUR"));accountCurrency="USD";
  assert(g_pcReady);assert(chart[1]==0 && chart[2]==0);
  assert(masks["old_result_box"]==0&&masks["manual_line"]==0);
@@ -185,6 +186,23 @@ int main(){
  clockMs+=61001;PanelDraw(true);assert(objects[PC_NAME].find("STALE")!=string::npos);
  quoteOK=false;PanelDraw(true);assert(objects[PC_NAME].find("No quote")!=string::npos);quoteOK=true;
  barsAvailable=0;PanelDraw(true);assert(contains("Waiting for broker"));barsAvailable=500;
+ // Older pending tickets must never displace the four active trades.
+ auto savedOrders=orders;
+ orders.clear();
+ for(int i=0;i<13;i++)orders.push_back({OP_SELLSTOP,"XAUUSD",123457,4155,4190,4140,0,100+i});
+ for(int i=0;i<4;i++)orders.push_back({i?OP_SELL:OP_BUY,"XAUUSD",123457,4180,4160,4200,1.5,1000+i});
+ g_pcTradePage=0;PanelDraw(true);
+ assert(contains("OPEN 4 | PENDING 13"));assert(contains("OPEN 1/1"));
+ for(int i=0;i<4;i++)assert(contains(to_string(1000+i)));
+ assert(!contains("Pending"));
+ clockMs+=300;PanelTableClick(g_pcX+20,g_pcY+g_pcBottom+30);
+ assert(contains("PEND 1/4"));assert(contains("Pending"));
+ PanelClick(PC_BUTTON+"live");assert(g_pcTradePage==0);assert(contains("OPEN 1/1"));
+ // Pending-only and empty accounts must still have a usable first page.
+ orders.resize(13);g_pcTradePage=0;PanelDraw(true);
+ assert(contains("OPEN 0 | PENDING 13"));assert(contains("PEND 1/4"));assert(contains("Pending"));
+ orders.clear();g_pcTradePage=0;PanelDraw(true);assert(contains("No matching trades"));
+ orders=savedOrders;clockMs+=300;
  // Dense levels must paginate without exceeding the canvas bounds.
  for(int i=0;i<20;i++)orders.push_back(orders[0]);
  PanelDraw(true);

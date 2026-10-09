@@ -1,4 +1,4 @@
-# Live broker-data chart panel — v6.610
+# Live broker-data chart panel — v6.620
 
 ## Install
 
@@ -31,7 +31,7 @@ A dedicated table below the candles shows **TICKET | TYPE | LIVE $ | TP~ $ | SL~
 - **LIVE**: current broker profit + accrued swap − the existing dashboard commission estimate. Pending orders show `Pending` rather than a fabricated live result.
 - **TP~ / SL~**: estimated net P/L **from the entry price to that exit price**, not the remaining change from the current quote. Formula: signed price move ÷ broker price tick size × broker tick value × lots, plus currently accrued swap, minus the dashboard commission estimate. A trailing stop above a BUY entry can therefore show a positive SL amount.
 - These are estimates, not guaranteed proceeds: conversion/tick value, future swap/commission and fill/slippage can change the final result. Missing broker tick size/value shows `N/A`; absent TP/SL shows `Not set`.
-- Four trades are visible at normal panel heights. Smaller panels show one or two rows. **Clicking the trade table** cycles through all matching open and pending orders in ticket order. The table updates alongside the chart and still displays when candle history is loading.
+- Four trades are visible at normal panel heights. Smaller panels show one or two rows. **Clicking the trade table** cycles through all matching open positions first, then separate pending-order pages, with ticket sorting inside each group. The table updates alongside the chart and still displays when candle history is loading.
 - Hover over the chart for full order-level details if a table value is shortened to fit.
 
 ## Controls
@@ -97,3 +97,12 @@ STRATEGY / LIVE now displays explicit totals, for example:
 Position totals, direction breakdowns, pending counts and floating P/L now come from one scan of the live order pool. Both stop and limit pending orders count. The same symbol/magic/comment reporting filter is retained; no other symbols are silently mixed in and management ownership is unchanged. The display timer refreshes statistics between ticks as well.
 
 Regression scenarios include four positions plus thirteen mixed stop/limit pending orders, a pending order triggering into a market position, preservation of HUD objects, hiding newly-created native lines, and restoration of original drawing visibility masks. Compile and verify against the MT4 Trade tab on a demo account; these tests use terminal stubs rather than native MT4.
+
+
+## v6.620 — open positions first in TRADES
+
+The TRADES money table no longer interleaves active positions and pending orders by ticket age. All open BUY/SELL positions come first, with pending orders on separate pages. At normal panel height, four open positions therefore fill the first page even if there are many older pending tickets.
+
+The table header shows explicit `OPEN` and `PENDING` totals. A compact `OPEN 1/1` or `PEND 1/4` indicator identifies the section/page (not an order limit). Click the table to move through pages; **LIVE** returns both the chart and table to their starting live/open view. No footer text or paging button has been reintroduced.
+
+The per-ticket live P/L, TP and SL amounts and reporting filter are unchanged. Regression coverage includes four newer active tickets with thirteen older pending tickets, pending-only and empty accounts, paging and returning to LIVE.
