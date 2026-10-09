@@ -1,4 +1,4 @@
-# X9 Full Focus — design 4 / v6.710
+# X9 Full Focus — design 4 / v6.720
 
 Implements the selected **Graphite Full Focus** layout with four complete palettes:
 
@@ -24,7 +24,7 @@ Click **THEME: GRAPHITE >** in the top-right header to cycle through all four. I
 
 The chart uses actual broker candles/quotes. Net values retain the existing commission-estimate convention. TP/SL/TRAIL estimates, trailing-update confirmation, order matching, closed-only equity history, and native-chart hiding/restoration remain in effect.
 
-## Chart navigation — v6.710
+## Chart navigation — v6.720
 
 The symbol/timeframe and all ten chart controls are in the upper header, not over the candle plot. At widths of 1180 pixels or more, they share the first header row and free 32 pixels for candles. Narrower supported windows use a second header row without reducing the previous candle-plot height.
 
@@ -38,15 +38,25 @@ The symbol/timeframe and all ten chart controls are in the upper header, not ove
 | **LIVE** | Return to latest bars, first trade page, default horizontal placement and automatic price scaling. |
 | **BARS / ALL** | Toggle candle-only/all-order-level automatic price fitting; clears manual vertical scaling. |
 
-`chartRightSpacePct` defaults to **20%**, clamped to 8–45%. It reserves blank space between the latest candles and the right price scale in the default view. Dragging keeps a minimum right gutter; offscreen candles and result badges are clipped rather than drawn across the price scale or trade dock. Nearby axis text is suppressed around the current-price badge to avoid overlapping price labels.
+`chartRightSpacePct` defaults to **20%**, clamped to 8–45%. It reserves blank space between the latest candles and the right price scale in the default view. Dragging keeps a minimum right gutter; offscreen candles are clipped rather than drawn across the price scale or trade dock. Nearby axis text is suppressed around the current-price badge to avoid overlapping price labels.
 
 Manual vertical placement remains stable across quote updates until LIVE or BARS/ALL resets it. MOVE temporarily disables native mouse scrolling; disabling MOVE or removing/falling back from the panel restores the saved setting. All navigation is display-only: it never moves real orders, SL or TP.
 
 ## Screen sizes
 
-The layout uses actual chart-client dimensions, not the full desktop resolution. It supports **800×560 and larger** chart areas. The trade dock limits its row count to leave at least 100 pixels of candle plot. Four rows are requested by default; small windows may display fewer, and `chartTradeRows` can request more. Pagination always keeps additional trades accessible.
+The layout uses actual chart-client dimensions, not the full desktop resolution. It supports **800×400 and larger** chart areas. The trade dock limits its row count to leave at least 100 pixels of candle plot at normal heights, or 60 pixels in short-window mode. Four rows are requested by default; small windows may display fewer, and `chartTradeRows` can request more. Pagination always keeps additional trades accessible.
 
-At less than 800×560, the EA shows a resize notice and falls back to the native chart rather than drawing an overlapping fixed-size dashboard. Trading logic continues unchanged. Long values are shortened only for display; hover shows full text. Minimize/restore and theme changes rebuild visual resources, not strategy state.
+At less than 800×400, the EA shows a resize notice and falls back to the native chart rather than drawing an overlapping fixed-size dashboard. Trading logic continues unchanged. Long values are shortened only for display; hover shows full text. Minimize/restore and theme changes rebuild visual resources, not strategy state.
+
+## Tester / Terminal resize and result-box removal — v6.720
+
+The old 560-pixel minimum caused the native chart to replace Full Focus when opening the Tester or Terminal. For chart heights of **400–559 pixels**, Full Focus now uses shorter summary cards and an 80-pixel TRADE TRACKER with one row (OPEN LIVE when positions exist, otherwise the most recent closed day). The trade table reduces its row count and remains pageable. Larger heights automatically restore the full tracker. The equity curve is drawn only when its dock has enough room.
+
+The minimum supported chart-client area is now **800×400**; making the Terminal/Tester so large that less remains still requires resizing it. This is the chart area, excluding MT4 toolbars and the Terminal/Tester.
+
+**All EA result boxes are removed**, both native BUY/SELL profit/points cards and custom-chart result badges. Their rendering code, polling and visual inputs have been deleted. Initialization/removal cleans up the EA's old `GX9T_` objects regardless of previous keep-on-exit settings. Unrelated manual objects are not deleted. Reporting identity inputs, trade history, closed-equity sampling and live trade values remain unchanged.
+
+After compiling, reattach the EA (or restart a visual test) to trigger cleanup. Test opening/closing and resizing both the Terminal and Tester, including a 1366×440 chart-client area.
 
 ## Installation
 
@@ -61,7 +71,7 @@ Compile and test on a demo account first. This environment cannot run MetaEditor
 The 12 tests exercise extracted MQL-compatible code against C++ terminal/canvas stubs, including:
 
 - Right candle space, header control bounds, centering, horizontal/vertical dragging, vertical zoom bounds, clipping, LIVE reset and native mouse-setting restoration.
-- All four palettes across 800/900/1024/1280/1366/1920 widths and 560/600/720/800/1080 heights.
+- All four palettes across 800/900/1024/1280/1366/1920 widths and 400/440/500/559/560/600/720/800/1080 heights.
 - Object bounds, chart/trade/equity/tracker separation, text clipping, row capacities and small-window fallback.
 - Four theme changes returning to the original palette without resetting sample trading/view state.
 - Order table sequence, pending exclusion from open counts, carryovers, TP/SL/TRAIL values and native-object restoration.
@@ -73,7 +83,7 @@ The entry, sizing, pending-expiry, open-position management, strategy-tick and d
 
 1. Compile with no missing image-resource errors.
 2. Cycle GRAPHITE → LIGHT → MIDNIGHT → EMERALD → GRAPHITE; verify readable labels and order colors in each.
-3. Resize the chart, including a compact 800×560 client area and a smaller fallback window; restore it.
+3. Resize the chart, including a compact 800×400 client area and a smaller fallback window; restore it.
 4. Check all actual open and pending tickets, lot sizes and P/L against the Trade tab; page the table.
 5. Verify TRADE TRACKER remains visible and the equity dock stays beside—not over—the table.
 6. Verify no trade, stop, target, DD halt, trailing confirmation or chart navigation resets when switching themes.

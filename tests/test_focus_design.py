@@ -60,7 +60,7 @@ double MathCeil(double x){return ceil(x);}
 '''
         main=r'''
 int main(){
- for(int w:{800,900,1024,1280,1366,1920})for(int h:{560,600,720,800,1080}){
+ for(int w:{800,900,1024,1280,1366,1920})for(int h:{400,440,500,559,560,600,720,800,1080}){
    width=w;height=h;HudLayout();
    for(int theme=0;theme<4;theme++){
      g_activeTheme=theme;nodes.clear();HudCreate();
@@ -69,14 +69,14 @@ int main(){
      assert(g_py[2]+g_ph[2]<g_py[3]);
      assert(g_py[3]+g_ph[3]<g_py[5]);assert(g_py[5]+g_ph[5]<=h-8);
      assert(g_px[4]+g_pw[4]==w-8);
-     assert(g_ph[3]-8-g_focusDockH-26-10>=100);
+     assert(g_ph[3]-8-g_focusDockH-26-10>=(height<560?60:100));
      for(auto &entry:nodes){auto &n=entry.second;
        int x=n.p[OBJPROP_XDISTANCE],y=n.p[OBJPROP_YDISTANCE];
        assert(x>=0&&x<w&&y>=0&&y<h);
        if(n.type!=OBJ_LABEL){assert(x+n.p[OBJPROP_XSIZE]<=w);assert(y+n.p[OBJPROP_YSIZE]<=h);}
      }
      assert(nodes.count(HUD_PREFIX+"theme_cycle"));
-     assert(nodes.count(HUD_PREFIX+"trk_R4_6"));
+     assert(nodes.count(HUD_PREFIX+(h<560?"trk_R0_6":"trk_R4_6")));
      assert(nodes[HUD_PREFIX+"trk_title"].text[OBJPROP_TEXT]=="TRADE TRACKER");
      int start=g_activeTheme;for(int i=0;i<4;i++)HudCycleTheme();assert(g_activeTheme==start);
      assert(tradeState==77&&zoom==80&&offset==12&&riskPeak==501.25);
@@ -84,7 +84,7 @@ int main(){
  }
  width=1280;height=800;HudLayout();
  showEquityCurve=false;HudLayout();assert(g_focusTableW==g_pw[3]);
- chartTradeRows=40;showEquityCurve=true;HudLayout();assert(g_ph[3]-8-g_focusDockH-26-10>=100);
+ chartTradeRows=40;showEquityCurve=true;HudLayout();assert(g_ph[3]-8-g_focusDockH-26-10>=(height<560?60:100));
  HudSetText(HUD_PREFIX+"top_balance","123456789012345678901234567890.12",UiInk());
  assert(nodes[HUD_PREFIX+"top_balance"].text[OBJPROP_TEXT].find("...")!=string::npos);
  assert(nodes[HUD_PREFIX+"top_balance"].text[OBJPROP_TOOLTIP]=="123456789012345678901234567890.12");

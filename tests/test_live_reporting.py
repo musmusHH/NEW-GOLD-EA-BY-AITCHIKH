@@ -10,7 +10,7 @@ SOURCE = (Path(__file__).resolve().parents[1] / 'GOOOOLD X9 SETINGS.txt').read_t
 
 class LiveReportingTest(unittest.TestCase):
     def test_actual_live_loop(self):
-        helpers = SOURCE[SOURCE.index('int ParseSid('):SOURCE.index('bool TagSeen(')]
+        helpers = SOURCE[SOURCE.index('int ParseSid('):SOURCE.index('void TagDeleteAll()\n  {')]
         hud = SOURCE[SOURCE.index('void HudTick(bool force)\n  {'):]
         loop = hud[hud.index('   g_openPL = 0.0;'):hud.index('   RefreshStats();')]
         stub = r'''

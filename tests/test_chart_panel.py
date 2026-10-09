@@ -289,7 +289,7 @@ int main(){
  assert(!PanelTableClick(g_pcX+20,g_pcY+g_pcH-2));
  // Exercise pixel bounds across normal/resized windows and zoom settings.
  for(int width=980;width<=1600;width+=71)
-   for(int height=500;height<=900;height+=83){chart[3]=width;chart[4]=height;PanelDraw(true);
+   for(int height=400;height<=900;height+=83){chart[3]=width;chart[4]=height;PanelDraw(true);assert(g_pcReady);
      if(g_pcReady)for(auto key:{"in","out","older","newer","live","range","move","center","vplus","vminus"}){
        auto p=props[PC_BUTTON+key];
        assert(p[OBJPROP_XDISTANCE]>=0&&p[OBJPROP_XDISTANCE]+p[OBJPROP_XSIZE]<width);
@@ -300,7 +300,7 @@ int main(){
  chart[3]=1000;PanelDraw(true);assert(g_pcReady); // smallest supported center
  chart[3]=799;PanelDraw(true);assert(!g_pcReady);assert(chart[1]==1&&chart[2]==1);
  chart[3]=1366;PanelDraw(true);assert(g_pcReady);
- showLiveChartPanel=false;PanelDraw(true);assert(!g_pcReady);assert(relayouts>=2);
+ showLiveChartPanel=false;PanelDraw(true);assert(!g_pcReady);assert(relayouts==0);
  showLiveChartPanel=true;g_pc.fail=true;PanelDraw(true);assert(!g_pcReady);assert(chart[1]==1);
  g_pc.fail=false;PanelDraw(true);PanelDestroy();assert(chart[1]==1&&chart[2]==1);
  assert(masks["old_result_box"]==63&&masks["manual_line"]==7&&masks["new_line"]==15);
@@ -334,12 +334,13 @@ int main(){
         self.assertGreater(record, success)
         self.assertIn('if(trailChanged && newSL>0', management[success:record])
 
-    def test_result_marker_arrays_initialized(self):
-        panel = SOURCE.split('//=== Broker-data chart panel')[1].split('double SymbolAsk()')[0]
-        for name in ('lastX', 'lastY'):
-            initialization = panel.index('ArrayInitialize(' + name + ',0);')
-            first_read = panel.index(name + '[c]')
-            self.assertLess(initialization, first_read)
+    def test_result_boxes_removed(self):
+        self.assertNotIn('void TagBoxCardDraw(', SOURCE)
+        self.assertNotIn('bool TagDrawOne(', SOURCE)
+        self.assertNotIn('lastX[4]', SOURCE)
+        self.assertNotIn('drawResultTags', SOURCE)
+        init=SOURCE.split('int OnInit()')[1].split('void OnDeinit')[0]
+        self.assertIn('TagDeleteAll();', init)
 
     def test_display_only_and_lifecycle(self):
         panel = SOURCE.split('//=== Broker-data chart panel')[1].split('double SymbolAsk()')[0]
@@ -349,7 +350,7 @@ int main(){
         self.assertIn('SymbolInfoTick(', panel)
         self.assertIn('if(id==CHARTEVENT_OBJECT_CLICK && PanelClick(sparam)) return;', SOURCE)
         self.assertIn('EventKillTimer();\n   PanelDestroy();', SOURCE)
-        self.assertIn('if(g_pcReady) return; // Custom panel', SOURCE)
+        self.assertNotIn('TagRelayout();', SOURCE)
 
 if __name__ == '__main__':
     unittest.main()

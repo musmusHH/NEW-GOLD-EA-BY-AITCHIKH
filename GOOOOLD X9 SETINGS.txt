@@ -14,7 +14,7 @@
 //+------------------------------------------------------------------+
 #property copyright   "Mr. CapFree"
 #property link        "https://example.com"
-#property version     "6.710"   // Broker-data chart panel + carryover performance
+#property version     "6.720"   // Broker-data chart panel + carryover performance
 #property description "gold X9 Full Focus design 4 + four themes + broker-data chart"
 #property strict
 #include <Canvas\Canvas.mqh>
@@ -118,24 +118,9 @@ enum enumMatchMode
    MATCH_ALL_SYMBOL       = 3  // Match all historical trades on symbol
   };
 
-//=== C2 === CLOSED-TRADE RESULT TAGS (visual only) ======================
-input bool   drawResultTags        = true;             // C2: Draw A Result Tag Where A Trade Closed
-input bool   tagDrawOnInitHistory  = true;             // C2: Also Tag History At EA Start
-input int    tagLookbackTrades     = 0;                // C2: How Many Past Trades To Tag At Start (0 = ALL history)
-input int    tagMaxOnChart         = 0;                // C2: Keep Newest N Tags (0 = keep all on chart)
-input int    tagMaxAgeHours        = 0;                // C2: Delete Tags Older Than N Hours (0 = keep)
-input int    tagScanSeconds        = 2;                // C2: History Poll Interval (seconds)
-input bool   tagDrawInTester       = false;            // C2: Draw In Blind (non-visual) Tester Runs
-input bool   tagDebug              = true;             // C2: Log Object Errors + Scan Counts
-input bool   tagHidden             = true;             // C2: Hide Tags From The Object List
-input bool   tagKeepOnExit         = false;            // C2: Keep Tags On Chart After EA Is Removed
-input bool   tagOnlyMyMagic        = true;             // C2: Filter History Tags (true = use filterMatchMode)
+// Reporting identity: retained independently of removed result boxes.
+input bool   tagOnlyMyMagic        = true;             // Filter live/closed reporting (true = use filterMatchMode)
 input enumMatchMode filterMatchMode = MATCH_MAGIC_OR_COMMENT; // C2: History Filter Mode (0=Magic OR Comment, 1=Magic, 2=Comment, 3=All Symbol)
-input bool   tagBehindChart        = true;             // C2: Tags Behind Candles+Panels
-input int    tagFontSize           = 9;                // C2: Tag Font Size
-input string tagFontName           = "Consolas";       // C2: Tag Font
-input color  tagWinColor           = C'34,214,127';    // C2: Winning Tag Colour (green)
-input color  tagLossColor          = C'255,77,90';     // C2: Losing Tag Colour (red)
 input bool   showEquityCurve       = true;             // Closed-result EMA curve in the equity dock
 input int    eqCurveEmaPeriod      = 3;                // Closed-result EMA smoothing (1=raw, max 100)
 input bool   showEquityDDLine      = false;            // Optional CLOSED-result drawdown line (separate % scale)
@@ -247,26 +232,8 @@ int           g_lastDeadWinLogH   = -1;
 int           g_lastHaltSkipLogH  = -1;
 string        g_partialKeys[200];
 
-//=== C2: simple closed-trade result-tag state ==========================
+// Only retained to clean up result cards created by earlier versions.
 #define TAG_PREFIX "GX9T_"
-#define TAG_MAX    512
-string        g_tagBase[TAG_MAX];          // object-name base per drawn tag
-datetime      g_tagTime[TAG_MAX];          // close time per tag
-datetime      g_tagOpen[TAG_MAX];          // open time
-double        g_tagPrice[TAG_MAX];         // close price
-double        g_tagProfit[TAG_MAX];        // net profit
-int           g_tagPoints[TAG_MAX];        // profit points
-string        g_tagText[TAG_MAX];          // label text ("BUY +12.50 (+125 pts)")
-color         g_tagClr [TAG_MAX];          // win/loss colour
-bool          g_tagIsBuy[TAG_MAX];         // trade direction (true = buy, false = sell)
-int           g_tagN         = 0;          // count of tracked tags
-int           g_tagSeenTkt[TAG_MAX];       // processed key: ticket
-datetime      g_tagSeenTm [TAG_MAX];       // processed key: close time
-int           g_tagSeenN    = 0;
-int           g_tagHistTotal = 0;
-uint          g_lastTagMs   = 0;
-int           g_tagMade     = 0;
-int           g_tagFail     = 0;
 
 //=== C2: equity-curve sample ring ===
 #define EQ_MAX 512
@@ -338,13 +305,8 @@ void   expireStalePendingOrders();
 int    countOwnPositions();
 
 //=== C2 prototypes ===
-void   TagScan(bool force);
-void   TagInitHistory();
 bool   IsMatchingOrder();
-bool   TagDrawOne(int ticket);
-void   TagTrim();
 void   TagDeleteAll();
-void   TagRelayout();
 
 //=== HUD v2 prototypes ===
 void   FocusGeometry(int width,int height);
@@ -814,9 +776,7 @@ void PanelDraw(bool force)
   {
    if(!PanelEnabled())
      {
-      bool wasReady=g_pcReady;
       PanelDestroy();
-      if(wasReady && drawResultTags) TagRelayout();
       return;
      }
    uint nowMs=GetTickCount();
@@ -828,11 +788,9 @@ void PanelDraw(bool force)
    if(cw!=g_chartW || ch!=g_chartH) HudLayout();
    int x=g_px[3],y=g_py[3],w=g_pw[3],h=g_ph[3];
    // Fall back to native chart if there is not enough room for a readable panel.
-   if(!g_focusReady || w<400 || h<240)
+   if(!g_focusReady || w<400 || h<160)
      {
-      bool hadPanel=g_pcReady;
       PanelDestroy();
-      if(hadPanel && drawResultTags) TagRelayout();
       return;
      }
    if(!g_pcReady || w!=g_pcW || h!=g_pcH || x!=g_pcX || y!=g_pcY)
@@ -846,7 +804,6 @@ void PanelDraw(bool force)
          Print("gold_x9: custom chart allocation failed: ",GetLastError());
          g_pc.Destroy(); // Also release partially allocated resources.
          PanelDestroy();
-         if(drawResultTags) TagRelayout();
          return;
         }
       g_pcReady=true; g_pcX=x; g_pcY=y; g_pcW=w; g_pcH=h;
@@ -866,7 +823,7 @@ void PanelDraw(bool force)
       ChartSetInteger(0,CHART_FOREGROUND,false);
       ChartSetInteger(0,CHART_EVENT_MOUSE_MOVE,true);
       ChartSetInteger(0,CHART_MOUSE_SCROLL,g_pcMoveMode?false:g_pcOldMouseScroll);
-      // Replace native result objects, keeping their history state intact.
+      // Clear any legacy result objects; no result cards are drawn.
       ObjectsDeleteAll(0,TAG_PREFIX);
      }
    PanelHideNative();
@@ -970,32 +927,6 @@ void PanelDraw(bool force)
       if(levels[line].price<g_pcLow || levels[line].price>g_pcHigh) continue;
       PanelDash(PanelPriceY(levels[line].price),levels[line].ink);
      }
-   // A few time-anchored realized results from the existing tag cache.
-   int marked=0; int lastX[4]; int lastY[4];
-   ArrayInitialize(lastX,0);
-   ArrayInitialize(lastY,0);
-   if(drawResultTags)
-      for(int k=g_tagN-1;k>=MathMax(0,g_tagN-TAG_MAX) && marked<4;k--)
-        {
-         int slot=k%TAG_MAX;
-         if(g_tagTime[slot]<rates[count-1].time) continue;
-         int shift=iBarShift(activeTradeSymbol,Period(),g_tagTime[slot],false)-g_pcOffset;
-         if(shift<0 || shift>=count) continue;
-         if(g_tagPrice[slot]<g_pcLow || g_tagPrice[slot]>g_pcHigh) continue;
-         int mx=PanelBarX(shift,count), my=PanelPriceY(g_tagPrice[slot]);
-         if(mx<12 || mx>g_pcRight-10) continue;
-         if(my<g_pcTop+12 || my>g_pcBottom-18) continue;
-         bool collision=false;
-         for(int c=0;c<marked;c++)
-            if(MathAbs(mx-lastX[c])<80 && MathAbs(my-lastY[c])<22) collision=true;
-         if(collision) continue;
-         string result=(g_tagProfit[slot]>=0?"+":"")+DoubleToString(g_tagProfit[slot],2);
-         int rw=g_pc.TextWidth(result)+8;
-         int rx=(int)MathMax(12,MathMin(mx,g_pcRight-rw));
-         g_pc.FillRectangle(rx,my,rx+rw,my+14,ColorToARGB(UiBand()));
-         PanelText(rx+4,my,result,g_tagProfit[slot]>=0?UiGood():UiBad());
-         lastX[marked]=mx; lastY[marked]=my; marked++;
-        }
    if(quoted && tick.bid>=g_pcLow && tick.bid<=g_pcHigh)
      {
       int by=PanelPriceY(tick.bid);
@@ -1336,381 +1267,9 @@ bool IsMatchingOrder()
    return IsMatchingOrderIdentity();
   }
 
-bool TagSeen(int ticket, datetime ct)
-  {
-   int lim = (g_tagSeenN < TAG_MAX) ? g_tagSeenN : TAG_MAX;
-   for(int i = 0; i < lim; i++)
-      if(g_tagSeenTkt[i] == ticket && g_tagSeenTm[i] == ct) return true;
-   return false;
-  }
-
-void TagMark(int ticket, datetime ct)
-  {
-   int slot = g_tagSeenN % TAG_MAX;
-   g_tagSeenTkt[slot] = ticket;
-   g_tagSeenTm [slot] = ct;
-   g_tagSeenN++;
-  }
-
-//=== C2: SOLID RAISED BOX CARD & MERGED TRADE RESULT DRAWING ===============
-void TagBoxCardDraw(string name, datetime t, double p, string text, color borderClr, bool isBuy, int count)
-  {
-   string bgName   = name + "card_bg";
-   string textName = name + "card_txt";
-
-   // 1. Calculate screen coordinates for GUI label card
-   int subWin = 0;
-   int xPixels = 0;
-   int yPixels = 0;
-   bool isVisible = ChartTimePriceToXY(0, subWin, t, p, xPixels, yPixels);
-
-   color bgPlateClr = C'20,25,32'; // Solid dark titanium plate
-   color textClr    = clrWhite;
-
-   //--- Screen Pixel Raised 3D Card (Primary) ---
-   if(isVisible && xPixels > 0 && yPixels > 0)
-     {
-      // Clean up fallback objects if existing
-      ObjectDelete(0, name + "fb_bg");
-      ObjectDelete(0, name + "fb_txt");
-
-      int charWidth = (tagFontSize > 0) ? (tagFontSize - 1) : 7;
-      int textLen   = StringLen(text);
-      int cardWidth = textLen * charWidth + 18;
-      if(cardWidth < 70) cardWidth = 70;
-      int cardHeight = 22;
-
-      // Adjust Y anchor relative to price candle
-      int cardX = xPixels + 10;
-      int cardY = isBuy ? (yPixels - 28) : (yPixels + 8);
-      if(cardY < 10) cardY = 10;
-
-      // Create or update solid raised rectangle label
-      if(ObjectFind(0, bgName) < 0)
-        {
-         ResetLastError();
-         if(!ObjectCreate(0, bgName, OBJ_RECTANGLE_LABEL, 0, 0, 0))
-           {
-            g_tagFail++;
-            return;
-           }
-         g_tagMade++;
-        }
-      ObjectSetInteger(0, bgName, OBJPROP_XDISTANCE, cardX);
-      ObjectSetInteger(0, bgName, OBJPROP_YDISTANCE, cardY);
-      ObjectSetInteger(0, bgName, OBJPROP_XSIZE,     cardWidth);
-      ObjectSetInteger(0, bgName, OBJPROP_YSIZE,     cardHeight);
-      ObjectSetInteger(0, bgName, OBJPROP_BGCOLOR,   bgPlateClr);
-      ObjectSetInteger(0, bgName, OBJPROP_COLOR,     borderClr);
-      ObjectSetInteger(0, bgName, OBJPROP_BORDER_TYPE, BORDER_RAISED);
-      ObjectSetInteger(0, bgName, OBJPROP_BACK,      false);
-      ObjectSetInteger(0, bgName, OBJPROP_SELECTABLE, false);
-      ObjectSetInteger(0, bgName, OBJPROP_SELECTED,   false);
-      ObjectSetInteger(0, bgName, OBJPROP_HIDDEN,     tagHidden);
-
-      // Create or update text inside the card
-      if(ObjectFind(0, textName) < 0)
-        {
-         ResetLastError();
-         if(!ObjectCreate(0, textName, OBJ_LABEL, 0, 0, 0))
-           {
-            g_tagFail++;
-            return;
-           }
-         g_tagMade++;
-        }
-      ObjectSetInteger(0, textName, OBJPROP_XDISTANCE, cardX + 6);
-      ObjectSetInteger(0, textName, OBJPROP_YDISTANCE, cardY + 3);
-      ObjectSetString (0, textName, OBJPROP_TEXT,      text);
-      ObjectSetInteger(0, textName, OBJPROP_COLOR,     textClr);
-      ObjectSetInteger(0, textName, OBJPROP_FONTSIZE,  tagFontSize);
-      ObjectSetString (0, textName, OBJPROP_FONT,      tagFontName);
-      ObjectSetInteger(0, textName, OBJPROP_BACK,      false);
-      ObjectSetInteger(0, textName, OBJPROP_SELECTABLE,false);
-      ObjectSetInteger(0, textName, OBJPROP_SELECTED,  false);
-      ObjectSetInteger(0, textName, OBJPROP_HIDDEN,    tagHidden);
-     }
-   else
-     {
-      //--- Fallback Chart Object (For Off-Screen or Tester Mode) ---
-      ObjectDelete(0, bgName);
-      ObjectDelete(0, textName);
-
-      string fbTxt = name + "fb_txt";
-      if(ObjectFind(0, fbTxt) < 0)
-        {
-         ResetLastError();
-         if(!ObjectCreate(0, fbTxt, OBJ_TEXT, 0, t, p))
-           {
-            g_tagFail++;
-            return;
-           }
-         g_tagMade++;
-        }
-      ObjectMove(0, fbTxt, 0, t, p);
-      ObjectSetString (0, fbTxt, OBJPROP_TEXT,      text);
-      ObjectSetInteger(0, fbTxt, OBJPROP_COLOR,     borderClr);
-      ObjectSetInteger(0, fbTxt, OBJPROP_FONTSIZE,  tagFontSize);
-      ObjectSetString (0, fbTxt, OBJPROP_FONT,      tagFontName);
-      ObjectSetInteger(0, fbTxt, OBJPROP_ANCHOR,    isBuy ? ANCHOR_LEFT_LOWER : ANCHOR_LEFT_UPPER);
-      ObjectSetInteger(0, fbTxt, OBJPROP_BACK,      tagBehindChart);
-      ObjectSetInteger(0, fbTxt, OBJPROP_SELECTABLE,false);
-      ObjectSetInteger(0, fbTxt, OBJPROP_SELECTED,  false);
-      ObjectSetInteger(0, fbTxt, OBJPROP_HIDDEN,    tagHidden);
-     }
-  }
-
-void TagRelayout()
-  {
-   if(g_pcReady) return; // Custom panel draws its own clipped result badges.
-   // Array tracking which slot indices have been merged/processed
-   bool processed[TAG_MAX];
-   ArrayInitialize(processed, false);
-
-   int activeIndices[TAG_MAX];
-   ArrayInitialize(activeIndices, -1);
-
-   for(int i = 0; i < TAG_MAX; i++)
-     {
-      if(g_tagBase[i] == "") continue;
-      if(processed[i]) continue;
-
-      // Group trades closing at the same time and price
-      int    groupCount   = 0;
-      double sumProfit    = 0.0;
-      double sumPoints    = 0.0;
-      bool   groupIsBuy   = g_tagIsBuy[i];
-      datetime groupTime  = g_tagTime[i];
-      double groupPrice   = g_tagPrice[i];
-
-      ArrayInitialize(activeIndices, -1);
-
-      for(int j = i; j < TAG_MAX; j++)
-        {
-         if(g_tagBase[j] == "") continue;
-         if(processed[j]) continue;
-
-         // Match trades closed within 3 seconds, at same price & type
-         if(g_tagIsBuy[j] == groupIsBuy && 
-            MathAbs((long)(g_tagTime[j] - groupTime)) <= 3 && 
-            MathAbs(g_tagPrice[j] - groupPrice) < (activeSymbolPoint * 2.0))
-           {
-            processed[j] = true;
-            activeIndices[groupCount] = j;
-            sumProfit += g_tagProfit[j];
-            sumPoints += g_tagPoints[j];
-            groupCount++;
-           }
-        }
-
-      if(groupCount <= 0) continue;
-
-      // Calculate averages and format output text
-      double avgPts    = sumPoints / (double)groupCount;
-      int    intAvgPts = (int)MathRound(avgPts);
-
-      string dir    = groupIsBuy ? "BUY " : "SELL ";
-      string countPrefix = (groupCount > 1) ? (IntegerToString(groupCount) + "x ") : "";
-      string plText = (sumProfit >= 0.0 ? "+" : "") + DoubleToString(sumProfit, 2);
-      string ptText = (intAvgPts >= 0 ? "+" : "") + IntegerToString(intAvgPts) + " pts";
-      string cardText = countPrefix + dir + plText + " (" + ptText + ")";
-      color  cardClr  = (sumProfit >= 0.0) ? tagWinColor : tagLossColor;
-
-      // Primary slot base object name
-      string primaryName = g_tagBase[i];
-
-      // Delete secondary card objects for merged trades
-      for(int k = 1; k < groupCount; k++)
-        {
-         int secIdx = activeIndices[k];
-         if(secIdx >= 0 && g_tagBase[secIdx] != "")
-           {
-            ObjectsDeleteAll(0, g_tagBase[secIdx]);
-           }
-        }
-
-      // Draw single solid raised box card for the merged group
-      TagBoxCardDraw(primaryName, groupTime, groupPrice, cardText, cardClr, groupIsBuy, groupCount);
-     }
-  }
-
-bool TagDrawOne(int ticket)
-  {
-   if(ticket <= 0) return false;
-   if(!OrderSelect(ticket, SELECT_BY_TICKET, MODE_HISTORY)) return false;
-
-   if(!IsMatchingOrder()) return false;
-
-   datetime ct = OrderCloseTime();
-   if(ct <= 0) return false;
-   if(TagSeen(ticket, ct)) return false;
-   TagMark(ticket, ct);
-
-   int    t     = OrderType();
-   bool   isBuy = (t == OP_BUY);
-   double op    = OrderOpenPrice();
-   double cp    = OrderClosePrice();
-   double pl    = OrderProfit() + OrderSwap() - CommissionCost(OrderLots());
-   if(cp <= 0.0) return false;
-
-   // Points calculation
-   double pDiff  = isBuy ? (cp - op) : (op - cp);
-   int    points = (int)MathRound(pDiff / activeSymbolPoint);
-
-   // Slot in ring buffer
-   int slot = g_tagN % TAG_MAX;
-   if(g_tagBase[slot] != "")
-     {
-      ObjectsDeleteAll(0, g_tagBase[slot]);
-     }
-
-   g_tagBase  [slot] = TAG_PREFIX + IntegerToString(ticket) + " *" + IntegerToString((int)ct) + "* ";
-   g_tagTime  [slot] = ct;
-   g_tagOpen  [slot] = OrderOpenTime();
-   g_tagPrice [slot] = cp;
-   g_tagProfit[slot] = pl;
-   g_tagPoints[slot] = points;
-   g_tagIsBuy [slot] = isBuy;
-
-   // Pre-format text & color
-   string dir    = isBuy ? "BUY " : "SELL ";
-   string plText = (pl >= 0.0 ? "+" : "") + DoubleToString(pl, 2);
-   string ptText = (points >= 0 ? "+" : "") + IntegerToString(points) + " pts";
-   g_tagText  [slot] = dir + plText + " (" + ptText + ")";
-   g_tagClr   [slot] = (pl >= 0.0) ? tagWinColor : tagLossColor;
-   g_tagN++;
-
-   TagRelayout();
-   ChartRedraw(0);
-
-   if(tagDebug)
-      Print("gold_x9 C2: box card result tag drawn. Ticket=", ticket, " ", dir, " P/L ", plText, " (", ptText, ") at ", TimeToString(ct));
-   return true;
-  }
-
-void TagScan(bool force)
-  {
-   if(!drawResultTags) return;
-   if(IsTesting() && !IsVisualMode() && !tagDrawInTester) return;
-
-   if(!force)
-     {
-      uint ms   = GetTickCount();
-      uint wait = (uint)(tagScanSeconds * 1000);
-      if(wait < 200) wait = 200;
-      if(g_lastTagMs != 0 && (ms - g_lastTagMs) < wait) return;
-      g_lastTagMs = ms;
-     }
-
-   int total = OrdersHistoryTotal();
-   int start = 0;
-   if(!force)
-     {
-      if(total == g_tagHistTotal) return;
-      if(g_tagHistTotal > 0 && total > g_tagHistTotal)
-        {
-         start = g_tagHistTotal - 20;
-         if(start < 0) start = 0;
-        }
-     }
-
-   int drawn = 0;
-   for(int i = total - 1; i >= start; i--)
-     {
-      if(!OrderSelect(i, SELECT_BY_POS, MODE_HISTORY)) continue;
-      if(TagDrawOne(OrderTicket())) drawn++;
-     }
-
-   g_tagHistTotal = total;
-   TagTrim();
-  }
-
-void TagInitHistory()
-  {
-   if(!drawResultTags) return;
-   if(IsTesting() && !IsVisualMode() && !tagDrawInTester) return;
-
-   int total = OrdersHistoryTotal();
-   int want  = tagLookbackTrades;
-   if(want < 0) want = 0;
-
-   int drawn   = 0;
-   int matched = 0;
-   for(int i = total - 1; i >= 0; i--)
-     {
-      if(!OrderSelect(i, SELECT_BY_POS, MODE_HISTORY)) continue;
-      if(!IsMatchingOrder()) continue;
-      matched++;
-
-      int      tk = OrderTicket();
-      datetime ct = OrderCloseTime();
-      if(ct <= 0 || TagSeen(tk, ct)) continue;
-
-      if(!tagDrawOnInitHistory || (want > 0 && matched > want))
-        { TagMark(tk, ct); continue; }
-      if(TagDrawOne(tk)) drawn++;
-     }
-
-   g_tagHistTotal = total;
-   TagTrim();
-   if(tagDebug) Print("gold_x9 C2: history scan - ", drawn, " tag(s) drawn (lookback=", want, ").");
-   if(drawn > 0) ChartRedraw(0);
-  }
-
-void TagTrim()
-  {
-   if(!drawResultTags) return;
-   int lim = (g_tagN < TAG_MAX) ? g_tagN : TAG_MAX;
-   if(tagMaxAgeHours > 0)
-     {
-      datetime cutoff = TimeCurrent() - (datetime)(tagMaxAgeHours * 3600);
-      for(int i = 0; i < lim; i++)
-        {
-         if(g_tagBase[i] == "") continue;
-         if(g_tagTime[i] < cutoff)
-           {
-            ObjectsDeleteAll(0, g_tagBase[i]);
-            g_tagBase[i] = "";
-            g_tagTime[i] = 0;
-           }
-        }
-     }
-
-   if(tagMaxOnChart <= 0) return;
-   int live = 0;
-   for(int i = 0; i < lim; i++) if(g_tagBase[i] != "") live++;
-
-   while(live > tagMaxOnChart)
-     {
-      int      oldest = -1;
-      datetime ot     = 0;
-      for(int i = 0; i < lim; i++)
-        {
-         if(g_tagBase[i] == "") continue;
-         if(oldest < 0 || g_tagTime[i] < ot)
-           { oldest = i; ot = g_tagTime[i]; }
-        }
-      if(oldest < 0) break;
-      ObjectsDeleteAll(0, g_tagBase[oldest]);
-      g_tagBase[oldest] = "";
-      g_tagTime[oldest] = 0;
-      live--;
-     }
-  }
-
 void TagDeleteAll()
   {
-   ObjectsDeleteAll(0, TAG_PREFIX);
-   for(int i = 0; i < TAG_MAX; i++)
-     {
-      g_tagBase[i]    = "";
-      g_tagTime[i]    = 0;
-      g_tagSeenTkt[i] = 0;
-      g_tagSeenTm[i]  = 0;
-     }
-   g_tagN         = 0;
-   g_tagSeenN     = 0;
-   g_tagHistTotal = 0;
+   ObjectsDeleteAll(0,TAG_PREFIX);
   }
 
 //=== C2: smooth equity curve ===
@@ -2042,23 +1601,15 @@ int OnInit()
 
    if(showEquityCurve) SeedEquityHistory();
 
-   g_lastTagMs = 0;
-   g_tagMade   = 0;
-   g_tagFail   = 0;
-   if(drawResultTags)
-     {
-      if(!tagKeepOnExit) TagDeleteAll();
-      ChartSetInteger(0, CHART_SHOW_OBJECT_DESCR, true);
-      TagInitHistory();
-      TagRelayout();
-     }
+   // Remove legacy EA result cards even when old presets kept them on exit.
+   TagDeleteAll();
 
    HudTick(true);
    EqDraw();
    PanelDraw(true);
    if(PanelEnabled()) EventSetTimer(1);
 
-   Print("gold_x9 v6.71 (MQL4) initialised on ", activeTradeSymbol, " digits=", activeSymbolDigits, " point=", DoubleToString(activeSymbolPoint, activeSymbolDigits), " tags=", (drawResultTags ? "on" : "off"), " hud=", (showDashboardPanel ? "on" : "off"));
+   Print("gold_x9 v6.72 (MQL4) initialised on ", activeTradeSymbol, " digits=", activeSymbolDigits, " point=", DoubleToString(activeSymbolPoint, activeSymbolDigits), " result boxes=removed", " hud=", (showDashboardPanel ? "on" : "off"));
    return(INIT_SUCCEEDED);
   }
 
@@ -2068,8 +1619,7 @@ void OnDeinit(const int reason)
    PanelDestroy();
    EqCanvasDestroy();
    ObjectsDeleteAll(0, HUD_PREFIX);
-   if(!tagKeepOnExit) TagDeleteAll();
-   else if(drawResultTags) TagRelayout(); // Recreate native tags when keeping them on exit.
+   TagDeleteAll();
    ChartRedraw(0);
   }
 
@@ -2078,7 +1628,6 @@ void OnTimer()
    // Refresh counts even if an order changes between market ticks.
    // Display only: no order-management calls from the timer.
    HudTick(false);
-   TagScan(false);
    PanelDraw(false);
   }
 
@@ -2096,7 +1645,6 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
    if(ms-g_lastChartChgMs<200)return;
    g_lastChartChgMs=ms;
    if(showDashboardPanel){HudLayout();EqDraw();}
-   if(drawResultTags)TagRelayout();
    PanelDraw(true);
   }
 
@@ -2105,7 +1653,6 @@ void OnTick()
    activateStrategyContext();
    TrackEquityAndDD();
    HudTick(false);
-   TagScan(false);
    PanelDraw(false);
 
    datetime now = TimeCurrent();
@@ -2669,13 +2216,13 @@ void HudSetText(string name, string text, color c)
 void FocusGeometry(int width,int height)
   {
    g_chartW=width;g_chartH=height;
-   g_focusReady=(width>=800 && height>=560);
+   g_focusReady=(width>=800 && height>=400);
    for(int i=0;i<HUD_NP;i++) { g_px[i]=8;g_py[i]=8;g_pw[i]=0;g_ph[i]=0; }
    if(!g_focusReady) return;
-   g_px[2]=8;g_py[2]=8;g_pw[2]=width-16;g_ph[2]=(width<1180)?140:108;
-   g_px[5]=8;g_py[5]=height-164;g_pw[5]=width-16;g_ph[5]=156;
+   g_px[2]=8;g_py[2]=8;g_pw[2]=width-16;g_ph[2]=((width<1180)?140:108)-(height<560?20:0);
+   g_px[5]=8;g_ph[5]=(height<560)?80:156;g_py[5]=height-g_ph[5]-8;g_pw[5]=width-16;
    g_px[3]=8;g_py[3]=g_py[2]+g_ph[2]+8;g_pw[3]=width-16;g_ph[3]=g_py[5]-8-g_py[3];
-   int capacity=(int)MathMax(1,(g_ph[3]-10-100-26-44-8)/20);
+   int capacity=(int)MathMax(1,(g_ph[3]-10-(height<560?60:100)-26-44-8)/20);
    g_focusRows=(int)MathMin(capacity,MathMax(1,MathMin(40,chartTradeRows)));
    g_focusDockH=44+g_focusRows*20;
    int equityWidth=showEquityCurve?(int)MathMax(224,MathMin(360,g_pw[3]*0.28)):0;
@@ -2713,11 +2260,13 @@ void HudCreate()
    g_hN=0;
    if(!g_focusReady)
      {
-      HudLabelObj(HUD_PREFIX+"small",2,8,8,"X9: enlarge chart to 800 x 560 for Focus dashboard",UiAccent(),9,false,true);
+      HudLabelObj(HUD_PREFIX+"small",2,8,8,"X9: enlarge chart to 800 x 400 for Focus dashboard",UiAccent(),9,false,true);
       HudMoveAll();return;
      }
    int width=g_pw[2];
    bool compact=(g_chartW<1180);
+   bool shortView=(g_chartH<560);
+   int trackerRows=shortView?1:5;
    int headerHeight=compact?68:36,metricY=headerHeight+8;
    HudRectObj(HUD_PREFIX+"header",2,0,0,width,headerHeight,UiPanel(),UiBorder());
    HudBoundLabel(HUD_PREFIX+"brand",2,12,8,150,"X9 / FULL FOCUS",UiAccent(),12,true);
@@ -2751,15 +2300,15 @@ void HudCreate()
    for(int i=0;i<6;i++)
      {
       int x=i*width/6,cellWidth=(i+1)*width/6-x-5;
-      HudRectObj(HUD_PREFIX+"metric"+IntegerToString(i),2,x,metricY,cellWidth,64,UiPanel(),UiBorder());
+      HudRectObj(HUD_PREFIX+"metric"+IntegerToString(i),2,x,metricY,cellWidth,shortView?44:64,UiPanel(),UiBorder());
       HudBoundLabel(HUD_PREFIX+"metric_label"+IntegerToString(i),2,x+10,metricY+7,cellWidth-20,labels[i],UiDim(),8,true);
-      HudBoundLabel(HUD_PREFIX+ids[i],2,x+10,metricY+26,cellWidth-20,"-",UiInk(),g_chartW<1000?16:20,true);
+      HudBoundLabel(HUD_PREFIX+ids[i],2,x+10,metricY+26,cellWidth-20,"-",UiInk(),shortView?12:(g_chartW<1000?16:20),true);
      }
    HudRectObj(HUD_PREFIX+"trk_bg",5,0,0,g_pw[5],g_ph[5],UiPanel(),UiBorder());
    HudLabelObj(HUD_PREFIX+"trk_title",5,12,10,"TRADE TRACKER",UiAccent(),12,false,true);
-   bool wide=(g_chartW>=1100);
+   bool wide=(g_chartW>=1100 && !shortView);
    int tableWidth=g_pw[5]-(wide?238:0);
-   for(int band=0;band<5;band++)
+   for(int band=0;band<trackerRows;band++)
       HudRectObj(HUD_PREFIX+"trk_band"+IntegerToString(band),5,8,52+band*19,tableWidth-16,18,
          band%2==0?UiBand():UiPanel(),band%2==0?UiBand():UiPanel());
    int percentages[8];percentages[0]=0;percentages[1]=18;percentages[2]=29;percentages[3]=39;
@@ -2773,7 +2322,7 @@ void HudCreate()
       int x=12+(tableWidth-24)*percentages[c]/100;
       int cw=(tableWidth-24)*(percentages[c+1]-percentages[c])/100-4;
       HudBoundLabel(HUD_PREFIX+"trk_H"+IntegerToString(c),5,x,35,cw,heads[c],UiDim(),8,true);
-      for(int r=0;r<5;r++)
+      for(int r=0;r<trackerRows;r++)
          HudBoundLabel(HUD_PREFIX+"trk_R"+IntegerToString(r)+"_"+IntegerToString(c),5,x,55+r*19,cw,"-",UiInk(),9,false);
      }
    if(wide)
