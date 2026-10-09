@@ -72,6 +72,16 @@ int main(){
             subprocess.run(['g++','-std=c++17',str(path/'test.cpp'),'-o',str(path/'test')],check=True)
             subprocess.run([str(path/'test')],check=True)
 
+    def test_position_displays_use_reporting_count(self):
+        for name in ('top_pos', 'liv_V4'):
+            line = next(line for line in SOURCE.splitlines()
+                        if 'HudSetText(' in line and '"' + name + '"' in line)
+            self.assertIn('IntegerToString(openCount)', line)
+            self.assertNotIn('countOwnPositions()', line)
+        self.assertIn('if(countOwnPositions() >= activeMaxPositions) return;', SOURCE)
+        mq4 = Path(__file__).resolve().parents[1] / 'gold_x9_FIXED.mq4'
+        self.assertEqual(mq4.read_text(), SOURCE)
+
     def test_history_and_management_contracts(self):
         self.assertIn('int keys[]; ArrayResize(keys,total);', SOURCE)
         self.assertNotIn('nk<128', SOURCE)
