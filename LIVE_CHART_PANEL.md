@@ -1,4 +1,4 @@
-# Live broker-data chart panel — v6.570
+# Live broker-data chart panel — v6.580
 
 ## Install
 
@@ -14,13 +14,13 @@ The new `showLiveChartPanel` input defaults to **true** and requires `showDashbo
 
 This is a custom display over the center of the native MT4 chart, not simulated prices. `CopyRates` supplies broker OHLC for the attached symbol/timeframe, including the forming candle; `SymbolInfoTick` supplies the latest bid/ask and quote timestamp. Refreshes are limited to five per second on ticks, with a one-second display-only timer. It cannot produce new prices while the broker feed is disconnected or the market is closed.
 
-The blue line/badge shows **bid**. The footer shows the last broker quote time and a STALE indication after no fresh quote timestamp has been observed for a minute. Missing history produces a waiting message instead of synthetic candles.
+The blue line/badge shows **bid**. The panel hover tooltip shows the last broker quote time and a STALE indication after no fresh quote timestamp has been observed for a minute. Missing history produces a waiting message instead of synthetic candles.
 
 The panel displays matching open positions (including carryovers), pending stop/limit orders, and each order's SL/TP. Matching uses the same symbol/magic/comment reporting identity as performance. Live P/L uses the existing dashboard commission estimate plus broker profit/swap, not a newly introduced accounting formula. Labels include tickets so levels can be associated with the correct position.
 
-All order lines remain at their actual prices. Nearby labels occupy separate rows with connectors. Very long labels are shortened with `...`; hover over the panel for full order/price details. `TAG>` cycles label pages if there are too many levels to fit. All in-range level lines remain visible on every page.
+All order lines remain at their actual prices. The stacked order-label text and diagonal connectors are removed to keep candles readable. Order details are available in the table and panel hover tooltip. There is no visible LIVE/tick/page footer, TAG button, or TRADES button.
 
-Up to four non-overlapping closed-result badges are drawn at their candle/close-price coordinates from the existing result-tag cache. `drawResultTags`, the historical tag lookback and the existing cache still govern available results. Badges that would collide with the order-label region are omitted rather than piled on top of it.
+Up to four non-overlapping closed-result badges remain at their candle/close-price coordinates from the existing result-tag cache. The `drawResultTags` setting and historical lookback continue to control these result markers.
 
 ## Per-trade money table
 
@@ -29,8 +29,8 @@ A dedicated table below the candles shows **TICKET | TYPE | LIVE $ | TP~ $ | SL~
 - **LIVE**: current broker profit + accrued swap − the existing dashboard commission estimate. Pending orders show `Pending` rather than a fabricated live result.
 - **TP~ / SL~**: estimated net P/L **from the entry price to that exit price**, not the remaining change from the current quote. Formula: signed price move ÷ broker price tick size × broker tick value × lots, plus currently accrued swap, minus the dashboard commission estimate. A trailing stop above a BUY entry can therefore show a positive SL amount.
 - These are estimates, not guaranteed proceeds: conversion/tick value, future swap/commission and fill/slippage can change the final result. Missing broker tick size/value shows `N/A`; absent TP/SL shows `Not set`.
-- Four trades are visible at normal panel heights. Smaller panels show one or two rows. The **TRADES n/m** button cycles through all matching open and pending orders in ticket order. The table updates alongside the chart and still displays when candle history is loading.
-- TP/SL level labels also include estimated cash results. Hover over the chart for full text if a long value is shortened to fit.
+- Four trades are visible at normal panel heights. Smaller panels show one or two rows. **Clicking the trade table** cycles through all matching open and pending orders in ticket order. The table updates alongside the chart and still displays when candle history is loading.
+- Hover over the chart for full order-level details if a table value is shortened to fit.
 
 ## Controls
 
@@ -40,10 +40,9 @@ A dedicated table below the candles shows **TICKET | TYPE | LIVE $ | TP~ $ | SL~
 | `<` / `>` | Browse older/newer bars by half a window |
 | `LIVE` | Return to the forming candle |
 | `ALL` / `BARS` | Toggle price scaling: candles plus all order levels, or candles only (plus current quote in live view) |
-| `TAG>` | Show the next page of order-level labels |
-| `TRADES n/m` | Show the next page of the per-trade money table |
+| Click the trade table | Show the next page of trades (no visible paging button) |
 
-`ALL` makes distant stops/targets visible but can compress the candles. In `BARS`, off-scale levels retain labelled prices with `^`/`v` indicators; they are not falsely drawn at a different price. Order P/L remains **current**, including while browsing historical candles. This is not a historical account replay.
+`ALL` makes distant stops/targets visible but can compress the candles. In `BARS`, off-scale level lines are omitted; their details remain in the table/hover tooltip. They are not falsely drawn at a different price. Order P/L remains **current**, including while browsing historical candles. This is not a historical account replay.
 
 The custom panel is read-only: it does not support dragging levels to modify orders. MT4 remains responsible for execution. Native trade-level lines and old result boxes are hidden while the custom panel is active to avoid duplicate clutter. The prior native trade-level/foreground settings are restored on removal or fallback. Windows without at least 400×240 pixels of center space use the native chart instead. Existing side-panel minimum-width limitations remain unchanged.
 
@@ -55,13 +54,13 @@ Run `python -m unittest discover -s tests -v` with Python and g++ installed. The
 
 1. Compare visible OHLC/bid against MT4's Data Window and Market Watch on M5 and another timeframe.
 2. Verify the four open positions, tickets, live P/L, pending buy/sell stops and each SL/TP against the Trade tab.
-3. Zoom, browse history, return LIVE, and switch ALL/BARS; check that labels connect to the correct prices.
+3. Zoom, browse history, return LIVE, and switch ALL/BARS; check that horizontal levels match the correct prices.
 4. Trigger/cancel a pending order and close a position; confirm the next refresh updates the overlay without duplicates.
 5. Resize, change themes/timeframes, detach/reattach, and disable `showLiveChartPanel`; check native chart settings and controls recover.
 6. Test with missing history/disconnected quotes and with many closely spaced orders.
 
 Trading signals, ownership of managed positions, order limits, stop management and risk controls are unchanged by this display feature.
 
-### Additional v6.570 demo checks
+### Additional v6.580 demo checks
 
-Compare each ticket with the MT4 Trade tab. Check both BUY and SELL targets/stops, a profitable trailing SL, unset SL/TP, pending orders, and TRADES pagination. Verify currency labels on non-USD accounts. Automated tests additionally cover BUY/SELL cash signs, non-point-sized ticks, missing tick metadata, absent stops, pending status and currency headers.
+Compare each ticket with the MT4 Trade tab. Check both BUY and SELL targets/stops, a profitable trailing SL, unset SL/TP, pending orders, and table-click pagination. Verify currency labels on non-USD accounts. Automated tests additionally cover BUY/SELL cash signs, non-point-sized ticks, missing tick metadata, absent stops, pending status and currency headers.

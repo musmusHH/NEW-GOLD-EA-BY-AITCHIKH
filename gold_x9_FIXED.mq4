@@ -20,7 +20,7 @@
 //+------------------------------------------------------------------+
 #property copyright   "Mr. CapFree"
 #property link        "https://example.com"
-#property version     "6.570"   // Broker-data chart panel + carryover performance
+#property version     "6.580"   // Broker-data chart panel + carryover performance
 #property description "gold x9 MQL4 + LAB M1-M4 + live broker-data chart panel"
 #property strict
 #include <Canvas\Canvas.mqh>
@@ -414,12 +414,12 @@ CCanvas g_pc;
 bool g_pcReady=false, g_pcSaved=false;
 long g_pcOldLevels=0, g_pcOldForeground=0;
 int g_pcX=0, g_pcY=0, g_pcW=0, g_pcH=0;
-int g_pcBars=64, g_pcOffset=0, g_pcPage=0, g_pcTradePage=0;
+int g_pcBars=64, g_pcOffset=0, g_pcTradePage=0;
 bool g_pcFitOrders=true;
 datetime g_pcLatest=0;
 double g_pcLow=0, g_pcHigh=1;
 int g_pcTop=42, g_pcBottom=0, g_pcRight=0;
-uint g_pcLastMs=0, g_pcQuoteSeenMs=0;
+uint g_pcLastMs=0, g_pcQuoteSeenMs=0, g_pcLastTableClickMs=0;
 datetime g_pcQuoteTime=0;
 struct PanelLevel
   {
@@ -599,8 +599,7 @@ void PanelTradeTable()
          PanelCell(cols[c],tableTop+36+row*20,cols[c+1]-cols[c],values[c],ink);
         }
      }
-   PanelButton("trades","TRADES "+IntegerToString(g_pcTradePage+1)+"/"+IntegerToString(pages),
-               g_pcX+g_pcW-104,g_pcY+g_pcH-26,96);
+
   }
 
 void PanelDraw(bool force)
@@ -666,7 +665,7 @@ void PanelDraw(bool force)
    PanelButton("newer",">",x+w-162,y+5,24);
    PanelButton("live","LIVE",x+w-136,y+5,40);
    PanelButton("range",g_pcFitOrders?"ALL":"BARS",x+w-94,y+5,40);
-   PanelButton("page","TAG>",x+w-52,y+5,44);
+
 
    PanelTradeTable();
 
@@ -740,41 +739,11 @@ void PanelDraw(bool force)
       int bottom=(int)MathMin(g_pcBottom,MathMax(top+1,PanelPriceY(MathMin(rates[bar].open,rates[bar].close))));
       g_pc.FillRectangle(bx-body/2,top,bx+body/2,bottom,ink);
      }
-   // Every level remains at its true price; labels use separate stacked rows
-   // with connector lines, so nearby entries never overwrite each other.
-   for(int a=1;a<ArraySize(levels);a++)
-     {
-      PanelLevel v=levels[a]; int b=a-1;
-      while(b>=0)
-        {
-         if(levels[b].price>=v.price) break;
-         levels[b+1]=levels[b]; b--;
-        }
-      levels[b+1]=v;
-     }
-   int rows=(int)MathMax(1,(g_pcBottom-g_pcTop-8)/18);
-   int pages=(int)MathMax(1,(ArraySize(levels)+rows-1)/rows);
-   g_pcPage=g_pcPage%pages;
+   // Keep only actual price-level lines; the table provides per-trade text.
    for(int line=0;line<ArraySize(levels);line++)
      {
-      bool inRange=(levels[line].price>=g_pcLow && levels[line].price<=g_pcHigh);
-      int ly=PanelPriceY(levels[line].price);
-      if(inRange) PanelDash(ly,levels[line].ink);
-      if(line/rows!=g_pcPage) continue;
-      int labelY=g_pcTop+4+(line%rows)*18;
-      string label=levels[line].text+" @"+DoubleToString(levels[line].price,activeSymbolDigits);
-      if(!inRange) label+=(levels[line].price>g_pcHigh?" ^":" v");
-      // Width bounds keep labels and connectors inside the plot at any zoom.
-      int labelW=(int)MathMin(g_pcRight-125,g_pc.TextWidth(label)+8);
-      if(g_pc.TextWidth(label)>labelW-8)
-        {
-         while(g_pc.TextWidth(label+"...")>labelW-8 && StringLen(label)>4)
-            label=StringSubstr(label,0,StringLen(label)-1);
-         label+="..."; // Full ticket/price details are available in the panel tooltip.
-        }
-      if(inRange) g_pc.Line(labelW+16,labelY+7,g_pcRight-2,ly,ColorToARGB(levels[line].ink,120));
-      g_pc.FillRectangle(12,labelY,16+labelW,labelY+15,ColorToARGB(C'20,30,40',235));
-      PanelText(16,labelY,label,levels[line].ink);
+      if(levels[line].price<g_pcLow || levels[line].price>g_pcHigh) continue;
+      PanelDash(PanelPriceY(levels[line].price),levels[line].ink);
      }
    // A few time-anchored realized results from the existing tag cache.
    int marked=0; int lastX[4]; int lastY[4];
@@ -787,9 +756,6 @@ void PanelDraw(bool force)
          if(shift<0 || shift>=count) continue;
          if(g_tagPrice[slot]<g_pcLow || g_tagPrice[slot]>g_pcHigh) continue;
          int mx=PanelBarX(shift,count), my=PanelPriceY(g_tagPrice[slot]);
-         // Keep result badges out of the occupied order-label region.
-         int usedRows=(int)MathMin(rows,ArraySize(levels)-g_pcPage*rows);
-         if(ArraySize(levels)>0 && mx<g_pcRight-100 && my<g_pcTop+4+usedRows*18) continue;
          if(my<g_pcTop+12 || my>g_pcBottom-18) continue;
          bool collision=false;
          for(int c=0;c<marked;c++)
@@ -813,8 +779,9 @@ void PanelDraw(bool force)
    PanelText((int)MathMax(165,g_pcRight-110),g_pcBottom+9,TimeToString(rates[0].time,TIME_MINUTES),clrSilver);
    string feed=quoted ? "Tick "+TimeToString(tick.time,TIME_SECONDS) : "No quote";
    if(quoted && (TimeCurrent()-tick.time>60 || nowMs-g_pcQuoteSeenMs>60000)) feed+=" (STALE)";
-   string footer=(g_pcOffset==0?"LIVE | ":"HISTORY | ")+feed+" | Tags "+IntegerToString(g_pcPage+1)+"/"+IntegerToString(pages);
-   PanelCell(12,h-20,w-124,footer,C'58,181,255');
+   // Quote status and navigation help remain accessible on hover, not over the chart.
+   string status=(g_pcOffset==0?"LIVE | ":"HISTORY | ")+feed;
+   ObjectSetString(0,PC_NAME,OBJPROP_TOOLTIP,detail+"\n"+status+"\nClick the trade table for the next page.");
    g_pc.Update();
   }
 
@@ -828,8 +795,21 @@ bool PanelClick(string name)
    if(key=="newer") g_pcOffset=(int)MathMax(0,g_pcOffset-g_pcBars/2);
    if(key=="live") g_pcOffset=0;
    if(key=="range") g_pcFitOrders=!g_pcFitOrders;
-   if(key=="page") g_pcPage++;
-   if(key=="trades") g_pcTradePage++;
+   PanelDraw(true);
+   ChartRedraw(0);
+   return true;
+  }
+
+bool PanelTableClick(int x,int y)
+  {
+   if(!g_pcReady) return false;
+   int tableTop=g_pcY+g_pcBottom+26;
+   if(x<g_pcX+8 || x>=g_pcX+g_pcW-8 || y<tableTop || y>=g_pcY+g_pcH-51) return false;
+   uint now=GetTickCount();
+   // Some terminal builds send both object and chart click notifications.
+   if(g_pcLastTableClickMs!=0 && now-g_pcLastTableClickMs<250) return true;
+   g_pcLastTableClickMs=now;
+   g_pcTradePage++;
    PanelDraw(true);
    ChartRedraw(0);
    return true;
@@ -1763,7 +1743,7 @@ int OnInit()
    PanelDraw(true);
    if(PanelEnabled()) EventSetTimer(1);
 
-   Print("gold_x9 v6.57 (MQL4) initialised on ", activeTradeSymbol, " digits=", activeSymbolDigits, " point=", DoubleToString(activeSymbolPoint, activeSymbolDigits), " tags=", (drawResultTags ? "on" : "off"), " hud=", (showDashboardPanel ? "on" : "off"));
+   Print("gold_x9 v6.58 (MQL4) initialised on ", activeTradeSymbol, " digits=", activeSymbolDigits, " point=", DoubleToString(activeSymbolPoint, activeSymbolDigits), " tags=", (drawResultTags ? "on" : "off"), " hud=", (showDashboardPanel ? "on" : "off"));
    return(INIT_SUCCEEDED);
   }
 
@@ -1786,6 +1766,8 @@ void OnTimer()
 void OnChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam)
   {
    if(id==CHARTEVENT_OBJECT_CLICK && PanelClick(sparam)) return;
+   if((id==CHARTEVENT_CLICK || (id==CHARTEVENT_OBJECT_CLICK && sparam==PC_NAME))
+      && PanelTableClick((int)lparam,(int)dparam)) return;
    if(id==CHARTEVENT_OBJECT_CLICK && StringFind(sparam,HUD_PREFIX+"theme_")==0)
      {
       int nt=(int)StringToInteger(StringSubstr(sparam,StringLen(HUD_PREFIX+"theme_")));

@@ -140,25 +140,29 @@ int main(){
  accountCurrency="EUR";PanelDraw(true);assert(contains("LIVE EUR"));accountCurrency="USD";
  assert(g_pcReady);assert(chart[1]==0 && chart[2]==0);
  assert(g_pcLow<4140 && g_pcHigh>4200);
- assert(contains("LIVE |"));assert(contains("BUY"));
+ assert(objects[PC_NAME].find("LIVE |")!=string::npos);assert(contains("BUY"));
  assert(objects[PC_NAME].find("SELL STOP")!=string::npos);
  assert(objects[PC_NAME].find("@1.10")==string::npos);
  assert(PanelPriceY(g_pcHigh)==g_pcTop);assert(PanelPriceY(g_pcLow)==g_pcBottom);
  assert(PanelPriceY(g_pcHigh+100)==g_pcTop);
  assert(PanelBarX(0,64)>PanelBarX(63,64));
  PanelClick(PC_BUTTON+"range"); assert(g_pcLow>4170);
- PanelClick(PC_BUTTON+"older");assert(g_pcOffset==32);assert(contains("HISTORY |"));
+ PanelClick(PC_BUTTON+"older");assert(g_pcOffset==32);assert(objects[PC_NAME].find("HISTORY |")!=string::npos);
  latest+=300;PanelDraw(true);assert(g_pcOffset==33);
  PanelClick(PC_BUTTON+"live");assert(g_pcOffset==0);
  for(int i=0;i<20;i++)PanelClick(PC_BUTTON+"in");assert(g_pcBars==16);
  for(int i=0;i<20;i++)PanelClick(PC_BUTTON+"out");assert(g_pcBars==240);
- clockMs+=61001;PanelDraw(true);assert(contains("STALE"));
- quoteOK=false;PanelDraw(true);assert(contains("No quote"));quoteOK=true;
+ clockMs+=61001;PanelDraw(true);assert(objects[PC_NAME].find("STALE")!=string::npos);
+ quoteOK=false;PanelDraw(true);assert(objects[PC_NAME].find("No quote")!=string::npos);quoteOK=true;
  barsAvailable=0;PanelDraw(true);assert(contains("Waiting for broker"));barsAvailable=500;
  // Dense levels must paginate without exceeding the canvas bounds.
  for(int i=0;i<20;i++)orders.push_back(orders[0]);
- PanelDraw(true);PanelClick(PC_BUTTON+"page");assert(g_pcPage==1);
- PanelClick(PC_BUTTON+"trades");assert(g_pcTradePage==1);
+ PanelDraw(true);
+ assert(!contains("LIVE |"));assert(!contains("#12345678"));
+ assert(objects.count(PC_BUTTON+"trades")==0);assert(objects.count(PC_BUTTON+"page")==0);
+ assert(!PanelTableClick(g_pcX+20,g_pcY+60));
+ assert(PanelTableClick(g_pcX+20,g_pcY+g_pcBottom+30));assert(g_pcTradePage==1);
+ PanelTableClick(g_pcX+20,g_pcY+g_pcBottom+30);assert(g_pcTradePage==1);
  // Exercise pixel bounds across normal/resized windows and zoom settings.
  for(int width=980;width<=1600;width+=71)
    for(int height=500;height<=900;height+=83){chart[3]=width;chart[4]=height;PanelDraw(true);}
