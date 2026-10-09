@@ -1,3 +1,5 @@
+> **Current release: v6.700 — Full Focus design 4.** See [FOCUS_DESIGN.md](FOCUS_DESIGN.md). The old sidebar layout and GX9 bitmap requirements below are historical; the current source draws the interface at runtime, has four themes and does not require BMP files.
+
 # Live broker-data chart panel — v6.660
 
 ## Install

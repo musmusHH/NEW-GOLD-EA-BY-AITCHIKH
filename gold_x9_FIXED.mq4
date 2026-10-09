@@ -7,81 +7,19 @@
 //|  Source video: "My Most Profitable Gold Trading Bot | Full Build |
 //|  From Scratch, Step by Step" - Mr. CapFree (youtu.be/5HkZD7BGuYo)|
 //|                                                                  |
-//|  HUD v2 (CARBON GRID) - interface rebuilt to the approved        |
-//|  product mockup:                                                 |
-//|   * 6-panel dashboard: ACCOUNT / STRATEGY MATRIX / THEME /       |
-//|     LIVE / TRADE TRACKER / EQUITY CURVE                          |
-//|   * C2 closed-trade RESULT TAGS drawn directly at trade close    |
-//|     (Simple Result & Points Label: BUY/SELL + Profit + Points)   |
-//|   * EQUITY CURVE drawn as a continuous closed-result EMA on a       |
-//|     resource bitmap ARGB with optional closed-result DD                |
-//|  All trading logic (fractals, lot sizing, BE/trail/salvage,      |
-//|  M1-M4, DD guard) is unchanged from the proven LAB build.        |
+//|  FULL FOCUS / DESIGN 4                                           |
+//|  Four runtime palettes, full-width broker-data candles,          |
+//|  open-first trade dock, closed-result EMA/DD and trade tracker.   |
+//|  Trading logic and risk controls unchanged by the UI redesign.   |
 //+------------------------------------------------------------------+
 #property copyright   "Mr. CapFree"
 #property link        "https://example.com"
-#property version     "6.660"   // Broker-data chart panel + carryover performance
-#property description "gold x9 MQL4 + LAB M1-M4 + live broker-data chart panel"
+#property version     "6.700"   // Broker-data chart panel + carryover performance
+#property description "gold X9 Full Focus design 4 + four themes + broker-data chart"
 #property strict
 #include <Canvas\Canvas.mqh>
 
-//--- Six embedded professional HUD themes --------------------------
-#resource "\\Images\\GX9\\L\\top.bmp"
-#resource "\\Images\\GX9\\L\\account.bmp"
-#resource "\\Images\\GX9\\L\\strategy.bmp"
-#resource "\\Images\\GX9\\L\\equity.bmp"
-#resource "\\Images\\GX9\\L\\tracker.bmp"
-#resource "\\Images\\GX9\\L\\bottom.bmp"
-#resource "\\Images\\GX9\\L\\gauge.bmp"
-#resource "\\Images\\GX9\\T\\top.bmp"
-#resource "\\Images\\GX9\\T\\account.bmp"
-#resource "\\Images\\GX9\\T\\strategy.bmp"
-#resource "\\Images\\GX9\\T\\equity.bmp"
-#resource "\\Images\\GX9\\T\\tracker.bmp"
-#resource "\\Images\\GX9\\T\\bottom.bmp"
-#resource "\\Images\\GX9\\T\\gauge.bmp"
-#resource "\\Images\\GX9\\G\\top.bmp"
-#resource "\\Images\\GX9\\G\\account.bmp"
-#resource "\\Images\\GX9\\G\\strategy.bmp"
-#resource "\\Images\\GX9\\G\\equity.bmp"
-#resource "\\Images\\GX9\\G\\tracker.bmp"
-#resource "\\Images\\GX9\\G\\bottom.bmp"
-#resource "\\Images\\GX9\\G\\gauge.bmp"
-#resource "\\Images\\GX9\\S\\top.bmp"
-#resource "\\Images\\GX9\\S\\account.bmp"
-#resource "\\Images\\GX9\\S\\strategy.bmp"
-#resource "\\Images\\GX9\\S\\equity.bmp"
-#resource "\\Images\\GX9\\S\\tracker.bmp"
-#resource "\\Images\\GX9\\S\\bottom.bmp"
-#resource "\\Images\\GX9\\S\\gauge.bmp"
-#resource "\\Images\\GX9\\E\\top.bmp"
-#resource "\\Images\\GX9\\E\\account.bmp"
-#resource "\\Images\\GX9\\E\\strategy.bmp"
-#resource "\\Images\\GX9\\E\\equity.bmp"
-#resource "\\Images\\GX9\\E\\tracker.bmp"
-#resource "\\Images\\GX9\\E\\bottom.bmp"
-#resource "\\Images\\GX9\\E\\gauge.bmp"
-#resource "\\Images\\GX9\\A\\top.bmp"
-#resource "\\Images\\GX9\\A\\account.bmp"
-#resource "\\Images\\GX9\\A\\strategy.bmp"
-#resource "\\Images\\GX9\\A\\equity.bmp"
-#resource "\\Images\\GX9\\A\\tracker.bmp"
-#resource "\\Images\\GX9\\A\\bottom.bmp"
-#resource "\\Images\\GX9\\A\\gauge.bmp"
-
-//--- Clickable theme button bitmap states -------------------------
-#resource "\\Images\\GX9\\B\\0n.bmp"
-#resource "\\Images\\GX9\\B\\0s.bmp"
-#resource "\\Images\\GX9\\B\\1n.bmp"
-#resource "\\Images\\GX9\\B\\1s.bmp"
-#resource "\\Images\\GX9\\B\\2n.bmp"
-#resource "\\Images\\GX9\\B\\2s.bmp"
-#resource "\\Images\\GX9\\B\\3n.bmp"
-#resource "\\Images\\GX9\\B\\3s.bmp"
-#resource "\\Images\\GX9\\B\\4n.bmp"
-#resource "\\Images\\GX9\\B\\4s.bmp"
-#resource "\\Images\\GX9\\B\\5n.bmp"
-#resource "\\Images\\GX9\\B\\5s.bmp"
+// Graphite Full Focus is drawn at runtime; no external bitmap skins required.
 
 // Enum for Lot Sizing Methods
 enum enumLotSizing
@@ -91,15 +29,13 @@ enum enumLotSizing
    RISK_SCALE_FACTOR = 2  // Risk Scale Factor
   };
 
-// Asset-based professional panel themes
+// Design 4 palette selector (four complete runtime-rendered themes).
 enum enumHudTheme
   {
-   HUD_LIGHT_SPORT=0,
-   HUD_DARK_TITANIUM=1,
-   HUD_GOLD_EXECUTIVE=2,
-   HUD_SLATE_PRO=3,
-   HUD_EMERALD_CARBON=4,
-   HUD_ARCTIC_BLUE=5
+   HUD_GRAPHITE=0,
+   HUD_LIGHT=1,
+   HUD_MIDNIGHT=2,
+   HUD_EMERALD=3
   };
 
 //--- INPUT PARAMETERS ---
@@ -147,20 +83,20 @@ input double          breakEvenLockPct       = 0.025;          // Break-Even Loc
 input double          strategyRiskWeight     = 0.055;          // Strategy Risk Weighting
 
 //--- Chart Style & CARBON GRID HUD ---
-input enumHudTheme hudTheme = HUD_DARK_TITANIUM;             // Dashboard + chart professional theme
+input enumHudTheme hudTheme = HUD_GRAPHITE;             // Initial Full Focus theme; THEME button cycles all four
 input bool   applyChartStyle       = true;             // Apply Dark Theme + Candlesticks On Start
 input color  chartBgColor          = C'255,255,255';        // Chart Background
 input color  bullBodyColor         = C'255,255,255';    // Bull Candle Body
 input color  bullWickColor         = C'176,137,30';    // Bull Candle Wick
 input color  bearBodyColor         = C'219,181,65';     // Bear Candle Body
 input color  bearWickColor         = C'176,137,30';     // Bear Candle Wick
-input int    chartTradeRows       = 8;                // Trade table rows (1-40; limited by available chart height)
+input int    chartTradeRows       = 4;                // Trade table rows (1-40; limited by available chart height)
 input int    chartStartBars       = 64;               // Custom chart starting candles (16-240)
 input int    chartStartOffset     = 0;                // Starting bar offset (0 = live)
 input bool   chartStartFitOrders  = false;            // false = BARS (default), true = ALL levels
 input bool   hideOriginalChart    = true;             // Hide native candles/axes while custom chart is active
 input bool   showLiveChartPanel   = true;             // Real broker candles + order overlay in middle panel
-input bool   showDashboardPanel    = true;             // Show The 6-Panel CARBON GRID HUD
+input bool   showDashboardPanel    = true;             // Show The Full Focus Dashboard
 input bool   showSpreadTag         = true;             // Show LIVE Panel (spread/PL/pips/lots/countdown)
 input color  panelBackground       = C'241,245,247';      // Panel Background
 input color  panelBorder           = C'2,28,50';     // Panel Border
@@ -199,7 +135,7 @@ input int    tagFontSize           = 9;                // C2: Tag Font Size
 input string tagFontName           = "Consolas";       // C2: Tag Font
 input color  tagWinColor           = C'34,214,127';    // C2: Winning Tag Colour (green)
 input color  tagLossColor          = C'255,77,90';     // C2: Losing Tag Colour (red)
-input bool   showEquityCurve       = true;             // C2: Smooth Equity Curve In EQUITY Panel
+input bool   showEquityCurve       = true;             // Closed-result EMA curve in the equity dock
 input int    eqCurveEmaPeriod      = 3;                // Closed-result EMA smoothing (1=raw, max 100)
 input bool   showEquityDDLine      = false;            // Optional CLOSED-result drawdown line (separate % scale)
 input color  equityDDLineColor     = C'235,82,82';      // Drawdown line color
@@ -357,6 +293,8 @@ color         g_hBg[HUD_MAXO];
 int           g_hN = 0;
 int           g_px[HUD_NP], g_py[HUD_NP], g_pw[HUD_NP], g_ph[HUD_NP];
 int           g_chartW = 0, g_chartH = 0;
+bool          g_focusReady=false;
+int           g_focusRows=4,g_focusDockH=124,g_focusTableW=800;
 uint          g_lastChartChgMs = 0;
 
 //=== HUD v2: extended trade statistics ===
@@ -408,6 +346,9 @@ void   TagDeleteAll();
 void   TagRelayout();
 
 //=== HUD v2 prototypes ===
+void   FocusGeometry(int width,int height);
+void   HudCycleTheme();
+void   EqCanvasDestroy();
 void   HudCreate();
 void   HudLayout();
 void   HudMoveAll();
@@ -566,9 +507,9 @@ void PanelButton(string key,string caption,int x,int y,int width)
    ObjectSetInteger(0,name,OBJPROP_YDISTANCE,y);
    ObjectSetInteger(0,name,OBJPROP_XSIZE,width);
    ObjectSetInteger(0,name,OBJPROP_YSIZE,22);
-   ObjectSetInteger(0,name,OBJPROP_BGCOLOR,C'34,47,60');
-   ObjectSetInteger(0,name,OBJPROP_COLOR,clrWhite);
-   ObjectSetInteger(0,name,OBJPROP_BORDER_COLOR,C'58,78,96');
+   ObjectSetInteger(0,name,OBJPROP_BGCOLOR,UiBand());
+   ObjectSetInteger(0,name,OBJPROP_COLOR,UiInk());
+   ObjectSetInteger(0,name,OBJPROP_BORDER_COLOR,UiBorder());
    ObjectSetInteger(0,name,OBJPROP_FONTSIZE,8);
    ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
    ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
@@ -706,34 +647,37 @@ void PanelTradeTable()
    ArraySort(pendingTickets);
    // One ordered list: EVERY market position before ANY pending order.
    int totalRows=ArraySize(tickets)+ArraySize(pendingTickets);
-   int rowCapacity=(int)MathMax(1,(g_pcH-g_pcTop-100-26-36-PC_TABLE_BOTTOM_GAP)/20);
-   int requestedRows=(int)MathMax(1,MathMin(40,chartTradeRows));
-   int pageRows=(int)MathMin(rowCapacity,MathMin(requestedRows,MathMax(1,totalRows)));
+   int pageRows=g_focusRows;
+   int tableWidth=g_focusTableW;
    int pages=(int)MathMax(1,(totalRows+pageRows-1)/pageRows);
    g_pcTradePage=g_pcTradePage%pages;
-   int tableTop=g_pcH-PC_TABLE_BOTTOM_GAP-(36+pageRows*20);
+   int tableTop=g_pcH-PC_TABLE_BOTTOM_GAP-g_focusDockH;
    g_pcBottom=tableTop-26;
-   g_pc.FillRectangle(8,tableTop,g_pcW-8,g_pcH-PC_TABLE_BOTTOM_GAP+1,ColorToARGB(C'20,30,40'));
+   g_pc.FillRectangle(8,tableTop,tableWidth-1,g_pcH-PC_TABLE_BOTTOM_GAP+1,ColorToARGB(UiBand()));
+   for(int band=0;band<pageRows;band++)
+      if(band%2==0) g_pc.FillRectangle(8,tableTop+34+band*20,tableWidth-8,tableTop+53+band*20,ColorToARGB(UiPanel()));
+   if(showEquityCurve)
+     {
+      g_pc.FillRectangle(tableWidth+12,tableTop,g_pcW-1,g_pcH-PC_TABLE_BOTTOM_GAP+1,ColorToARGB(UiPanel()));
+      PanelText(tableWidth+24,tableTop+3,"CLOSED EQUITY",UiAccent());
+      PanelCell(g_pcW-90,tableTop+3,80,(g_totalClosedPL>=0?"+":"")+DoubleToString(g_totalClosedPL,2),g_totalClosedPL>=0?UiGood():UiBad());
+     }
    string currency=AccountCurrency();
    string unit=(currency=="USD")?"$":currency;
    string title="TRADES "+currency+" | OPEN "+IntegerToString(ArraySize(tickets))+
                 " | PENDING "+IntegerToString(ArraySize(pendingTickets));
-   PanelCell(12,tableTop+2,g_pcW-120,title,C'58,181,255');
+   PanelCell(12,tableTop+2,tableWidth-120,title,UiAccent());
    string section="PAGE "+IntegerToString(g_pcTradePage+1)+"/"+IntegerToString(pages);
-   PanelText(g_pcW-100,tableTop+2,section,clrSilver);
-   int cols[7];
-   cols[0]=12;
-   cols[1]=12+(g_pcW-24)*18/100;
-   cols[2]=12+(g_pcW-24)*36/100;
-   cols[3]=12+(g_pcW-24)*51/100;
-   cols[4]=12+(g_pcW-24)*66/100;
-   cols[5]=12+(g_pcW-24)*81/100;
-   cols[6]=g_pcW-12;
-   string heads[6];
-   heads[0]="TICKET"; heads[1]="TYPE"; heads[2]="LIVE "+unit;
-   heads[3]="TP~ "+unit; heads[4]="SL~ "+unit; heads[5]="TRAIL "+unit;
-   for(int h=0;h<6;h++) PanelCell(cols[h],tableTop+18,cols[h+1]-cols[h],heads[h],clrSilver);
-   if(ArraySize(tickets)+ArraySize(pendingTickets)==0) PanelText(12,tableTop+36,"No matching trades",clrSilver);
+   PanelText(tableWidth-100,tableTop+2,section,UiDim());
+   int cols[8];
+   cols[0]=12;cols[1]=12+(tableWidth-24)*16/100;cols[2]=12+(tableWidth-24)*34/100;
+   cols[3]=12+(tableWidth-24)*42/100;cols[4]=12+(tableWidth-24)*56/100;
+   cols[5]=12+(tableWidth-24)*70/100;cols[6]=12+(tableWidth-24)*84/100;cols[7]=tableWidth-12;
+   string heads[7];
+   heads[0]="TICKET";heads[1]="TYPE";heads[2]="LOTS";heads[3]="LIVE "+unit;
+   heads[4]="TP~ "+unit;heads[5]="SL~ "+unit;heads[6]="TRAIL "+unit;
+   for(int h=0;h<7;h++) PanelCell(cols[h],tableTop+18,cols[h+1]-cols[h],heads[h],UiDim());
+   if(ArraySize(tickets)+ArraySize(pendingTickets)==0) PanelText(12,tableTop+36,"No matching trades",UiDim());
    for(int row=0;row<pageRows;row++)
      {
       int index=g_pcTradePage*pageRows+row;
@@ -742,17 +686,19 @@ void PanelTradeTable()
       if(index<ArraySize(tickets)) ticket=tickets[index];
       else ticket=pendingTickets[index-ArraySize(tickets)];
       if(!OrderSelect(ticket,SELECT_BY_TICKET,MODE_TRADES) || OrderCloseTime()!=0) continue;
-      string values[6];
+      string values[7];
       values[0]=IntegerToString(OrderTicket()); values[1]=PanelOrderName(OrderType());
-      values[2]=PanelLiveMoney(); values[3]=PanelExitMoney(OrderTakeProfit()); values[4]=PanelExitMoney(OrderStopLoss());
-      values[5]=PanelTrailMoney();
-      for(int c=0;c<6;c++)
+      values[2]=DoubleToString(OrderLots(),2);values[3]=PanelLiveMoney();
+      values[4]=PanelExitMoney(OrderTakeProfit());values[5]=PanelExitMoney(OrderStopLoss());
+      values[6]=PanelTrailMoney();
+      for(int c=0;c<7;c++)
         {
-         color ink=clrSilver;
-         if(c>=2 && StringFind(values[c],"+")==0) ink=C'49,214,154';
-         if(c>=2 && StringFind(values[c],"-")==0) ink=C'245,100,100';
-         if(c==5 && StringFind(values[c],"ON +")==0) ink=C'49,214,154';
-         if(c==5 && StringFind(values[c],"ON -")==0) ink=C'245,100,100';
+         color ink=UiInk();
+         if(c>=3 && StringFind(values[c],"+")==0) ink=UiGood();
+         if(c>=3 && StringFind(values[c],"-")==0) ink=UiBad();
+         if(c==6 && StringFind(values[c],"ON +")==0) ink=UiGood();
+         if(c==6 && StringFind(values[c],"ON -")==0) ink=UiBad();
+         if(OrderType()>OP_SELL && c==1) ink=UiAmber();
          PanelCell(cols[c],tableTop+36+row*20,cols[c+1]-cols[c],values[c],ink);
         }
      }
@@ -774,10 +720,10 @@ void PanelDraw(bool force)
    // Use actual window size, not the HUD's minimum-size assumptions.
    int cw=(int)ChartGetInteger(0,CHART_WIDTH_IN_PIXELS);
    int ch=(int)ChartGetInteger(0,CHART_HEIGHT_IN_PIXELS);
-   int x=g_px[0]+g_pw[0]+8, y=96;
-   int w=cw-281-8-x, h=ch-152-8-y;
+   if(cw!=g_chartW || ch!=g_chartH) HudLayout();
+   int x=g_px[3],y=g_py[3],w=g_pw[3],h=g_ph[3];
    // Fall back to native chart if there is not enough room for a readable panel.
-   if(w<400 || h<240)
+   if(!g_focusReady || w<400 || h<240)
      {
       bool hadPanel=g_pcReady;
       PanelDestroy();
@@ -787,6 +733,7 @@ void PanelDraw(bool force)
    if(!g_pcReady || w!=g_pcW || h!=g_pcH || x!=g_pcX || y!=g_pcY)
      {
       if(g_pcReady) g_pc.Destroy();
+      EqCanvasDestroy(); // Recreate above the new full-width chart surface.
       ObjectsDeleteAll(0,PC_BUTTON); // Recreate controls above the new bitmap.
       g_pcReady=false;
       if(!g_pc.CreateBitmapLabel(0,0,PC_NAME,x,y,w,h,COLOR_FORMAT_ARGB_NORMALIZE))
@@ -814,9 +761,9 @@ void PanelDraw(bool force)
       ObjectsDeleteAll(0,TAG_PREFIX);
      }
    PanelHideNative();
-   g_pc.Erase(ColorToARGB(C'12,18,26'));
+   g_pc.Erase(ColorToARGB(UiPanel()));
    g_pcRight=w-83; g_pcBottom=h-52;
-   PanelText(10,9,activeTradeSymbol+" M"+IntegerToString(Period()),C'58,181,255');
+   PanelText(10,9,activeTradeSymbol+" M"+IntegerToString(Period()),UiAccent());
    PanelButton("in","+",x+w-240,y+5,24);
    PanelButton("out","-",x+w-214,y+5,24);
    PanelButton("older","<",x+w-188,y+5,24);
@@ -841,8 +788,8 @@ void PanelDraw(bool force)
    int count=CopyRates(activeTradeSymbol,(ENUM_TIMEFRAMES)Period(),g_pcOffset,g_pcBars,rates);
    if(count<2)
      {
-      PanelText(15,65,"Waiting for broker candle history...",clrSilver);
-      g_pc.Update(); return;
+      PanelText(15,65,"Waiting for broker candle history...",UiDim());
+      g_pc.Update();EqDraw(); return;
      }
    // Use actual broker OHLC, including the forming candle. Never invent candles.
    g_pcLow=rates[0].low; g_pcHigh=rates[0].high;
@@ -860,10 +807,10 @@ void PanelDraw(bool force)
       string ticket="#"+IntegerToString(OrderTicket());
       string text=ticket+" "+PanelOrderName(type)+" "+DoubleToString(OrderLots(),2);
       text+=" LIVE "+PanelLiveMoney()+" TRAIL "+PanelTrailMoney();
-      color ink=market ? (net>=0 ? C'49,214,154' : C'245,100,100') : C'240,178,65';
+      color ink=market ? (net>=0 ? UiGood() : UiBad()) : UiAmber();
       PanelAddLevel(levels,OrderOpenPrice(),text,ink);
-      PanelAddLevel(levels,OrderStopLoss(),ticket+" SL~ "+PanelExitMoney(OrderStopLoss()),C'245,100,100');
-      PanelAddLevel(levels,OrderTakeProfit(),ticket+" TP~ "+PanelExitMoney(OrderTakeProfit()),C'49,214,154');
+      PanelAddLevel(levels,OrderStopLoss(),ticket+" SL~ "+PanelExitMoney(OrderStopLoss()),UiBad());
+      PanelAddLevel(levels,OrderTakeProfit(),ticket+" TP~ "+PanelExitMoney(OrderTakeProfit()),UiGood());
      }
    string detail="Amounts in "+AccountCurrency()+"; live P/L uses dashboard commission settings. TP/SL estimate net from entry, including current swap; future costs/slippage may differ.";
    for(int tip=0;tip<ArraySize(levels);tip++)
@@ -884,14 +831,14 @@ void PanelDraw(bool force)
      {
       double price=g_pcLow+(g_pcHigh-g_pcLow)*grid/4.0;
       int gy=PanelPriceY(price);
-      g_pc.Line(10,gy,g_pcRight,gy,ColorToARGB(C'33,46,59'));
-      PanelText(g_pcRight+5,gy-6,DoubleToString(price,activeSymbolDigits),clrSilver);
+      g_pc.Line(10,gy,g_pcRight,gy,ColorToARGB(UiBorder()));
+      PanelText(g_pcRight+5,gy-6,DoubleToString(price,activeSymbolDigits),UiDim());
      }
    int body=(int)MathMax(1,MathMin(9,(g_pcRight-20)/count-2));
    for(int bar=count-1;bar>=0;bar--)
      {
       int bx=PanelBarX(bar,count);
-      uint ink=ColorToARGB(rates[bar].close>=rates[bar].open ? C'0,190,170' : C'235,82,82');
+      uint ink=ColorToARGB(rates[bar].close>=rates[bar].open ? UiBull() : UiBear());
       g_pc.Line(bx,PanelPriceY(rates[bar].high),bx,PanelPriceY(rates[bar].low),ink);
       int top=PanelPriceY(MathMax(rates[bar].open,rates[bar].close));
       int bottom=(int)MathMin(g_pcBottom,MathMax(top+1,PanelPriceY(MathMin(rates[bar].open,rates[bar].close))));
@@ -924,25 +871,26 @@ void PanelDraw(bool force)
          string result=(g_tagProfit[slot]>=0?"+":"")+DoubleToString(g_tagProfit[slot],2);
          int rw=g_pc.TextWidth(result)+8;
          int rx=(int)MathMin(mx,g_pcRight-rw);
-         g_pc.FillRectangle(rx,my,rx+rw,my+14,ColorToARGB(C'20,30,40'));
-         PanelText(rx+4,my,result,g_tagClr[slot]);
+         g_pc.FillRectangle(rx,my,rx+rw,my+14,ColorToARGB(UiBand()));
+         PanelText(rx+4,my,result,g_tagProfit[slot]>=0?UiGood():UiBad());
          lastX[marked]=mx; lastY[marked]=my; marked++;
         }
    if(quoted && tick.bid>=g_pcLow && tick.bid<=g_pcHigh)
      {
       int by=PanelPriceY(tick.bid);
-      PanelDash(by,C'58,181,255');
-      g_pc.FillRectangle(g_pcRight+1,by-7,w-2,by+8,ColorToARGB(C'18,90,130'));
-      PanelText(g_pcRight+4,by-6,DoubleToString(tick.bid,activeSymbolDigits),clrWhite);
+      PanelDash(by,UiAccent());
+      g_pc.FillRectangle(g_pcRight+1,by-7,w-2,by+8,ColorToARGB(UiAccent()));
+      PanelText(g_pcRight+4,by-6,DoubleToString(tick.bid,activeSymbolDigits),UiPanel());
      }
-   PanelText(12,g_pcBottom+9,TimeToString(rates[count-1].time,TIME_DATE|TIME_MINUTES),clrSilver);
-   PanelText((int)MathMax(165,g_pcRight-110),g_pcBottom+9,TimeToString(rates[0].time,TIME_MINUTES),clrSilver);
+   PanelText(12,g_pcBottom+9,TimeToString(rates[count-1].time,TIME_DATE|TIME_MINUTES),UiDim());
+   PanelText((int)MathMax(165,g_pcRight-110),g_pcBottom+9,TimeToString(rates[0].time,TIME_MINUTES),UiDim());
    string feed=quoted ? "Tick "+TimeToString(tick.time,TIME_SECONDS) : "No quote";
    if(quoted && (TimeCurrent()-tick.time>60 || nowMs-g_pcQuoteSeenMs>60000)) feed+=" (STALE)";
    // Quote status and navigation help remain accessible on hover, not over the chart.
    string status=(g_pcOffset==0?"LIVE | ":"HISTORY | ")+feed;
    ObjectSetString(0,PC_NAME,OBJPROP_TOOLTIP,detail+"\n"+status+"\nClick the trade table for the next rows: all open positions first, then pending orders. LIVE returns to the beginning. Set chartTradeRows to change visible rows.");
    g_pc.Update();
+   EqDraw();
   }
 
 bool PanelClick(string name)
@@ -964,7 +912,7 @@ bool PanelTableClick(int x,int y)
   {
    if(!g_pcReady) return false;
    int tableTop=g_pcY+g_pcBottom+26;
-   if(x<g_pcX+8 || x>=g_pcX+g_pcW-8 || y<tableTop || y>=g_pcY+g_pcH-PC_TABLE_BOTTOM_GAP+1) return false;
+   if(x<g_pcX+8 || x>=g_pcX+g_focusTableW-8 || y<tableTop || y>=g_pcY+g_pcH-PC_TABLE_BOTTOM_GAP+1) return false;
    uint now=GetTickCount();
    // Some terminal builds send both object and chart click notifications.
    if(g_pcLastTableClickMs!=0 && now-g_pcLastTableClickMs<250) return true;
@@ -1660,7 +1608,7 @@ void EqItem(int k, double &v, datetime &t)
 
 CCanvas g_eqCanvas;
 bool g_eqCanvasReady=false;
-int g_eqCanvasX=0,g_eqCanvasY=0;
+int g_eqCanvasX=0,g_eqCanvasY=0,g_eqCanvasW=0,g_eqCanvasH=0;
 
 void EqCanvasDestroy()
   {
@@ -1670,19 +1618,21 @@ void EqCanvasDestroy()
 
 void EqDraw()
   {
-   if(!showEquityCurve || !showDashboardPanel) { EqCanvasDestroy(); return; }
+   if(!showEquityCurve || !showDashboardPanel || !g_focusReady) { EqCanvasDestroy(); return; }
    if(g_pw[4]<=0) return;
-   int ox=g_px[4]+14,oy=g_py[4]+34;
+   int ox=g_px[4]+12,oy=g_py[4]+26;
+   int width=g_pw[4]-24,height=g_ph[4]-34;
+   if(width<100 || height<40) { EqCanvasDestroy(); return; }
    string name=HUD_PREFIX+"eq_curve";
-   if(!g_eqCanvasReady || ObjectFind(0,name)<0 || ox!=g_eqCanvasX || oy!=g_eqCanvasY)
+   if(!g_eqCanvasReady || ObjectFind(0,name)<0 || ox!=g_eqCanvasX || oy!=g_eqCanvasY || width!=g_eqCanvasW || height!=g_eqCanvasH)
      {
       EqCanvasDestroy();
       // Remove the old disconnected rectangle-based curve objects.
       ObjectsDeleteAll(0,HUD_PREFIX+"eql");
       ObjectsDeleteAll(0,HUD_PREFIX+"eqf");
-      if(!g_eqCanvas.CreateBitmapLabel(0,0,name,ox,oy,EQ_PLOT_W,96,COLOR_FORMAT_ARGB_NORMALIZE))
+      if(!g_eqCanvas.CreateBitmapLabel(0,0,name,ox,oy,width,height,COLOR_FORMAT_ARGB_NORMALIZE))
         { g_eqCanvas.Destroy(); return; }
-      g_eqCanvasReady=true;g_eqCanvasX=ox;g_eqCanvasY=oy;
+      g_eqCanvasReady=true;g_eqCanvasX=ox;g_eqCanvasY=oy;g_eqCanvasW=width;g_eqCanvasH=height;
       ObjectSetInteger(0,name,OBJPROP_BACK,false);
       ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
       ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
@@ -1693,7 +1643,7 @@ void EqDraw()
    int nUse=(int)MathMin(kept,MathMax(2,MathMin(96,eqCurveSamples)));
    if(nUse==0)
      {
-      g_eqCanvas.TextOut(5,35,"Waiting for closed results",ColorToARGB(UiDim()));
+      g_eqCanvas.TextOut(5,22,"No closed results",ColorToARGB(UiDim()));
       g_eqCanvas.Update();return;
      }
    double smooth[96],dd[96];
@@ -1713,13 +1663,13 @@ void EqDraw()
    int period=(int)MathMax(1,MathMin(100,eqCurveEmaPeriod));
    g_eqCanvas.TextOut(4,0,"EMA("+IntegerToString(period)+")",ColorToARGB(UiCurve()));
    if(showEquityDDLine)
-      g_eqCanvas.TextOut(100,0,"DD 0-"+DoubleToString(ddScale,1)+"%",ColorToARGB(equityDDLineColor));
+      g_eqCanvas.TextOut(85,0,"DD 0-"+DoubleToString(ddScale,1)+"%",ColorToARGB(equityDDLineColor));
    string tip="Closed results only. Equity EMA("+IntegerToString(period)+
       "): "+DoubleToString(smooth[nUse-1],2)+" "+AccountCurrency()+
       ". DD uses unsmoothed closed results from the running peak: "+DoubleToString(dd[nUse-1],2)+"%.";
    if(showEquityDDLine) tip+=" DD scale: 0% at top, "+DoubleToString(ddScale,1)+"% at bottom (separate from equity scale).";
    ObjectSetString(0,name,OBJPROP_TOOLTIP,tip);
-   int left=4,right=EQ_PLOT_W-5,top=18,bottom=81;
+   int left=4,right=width-5,top=18,bottom=height-9;
    int prevY=0,prevDD=0;
    for(int x=left;x<=right;x++)
      {
@@ -1924,7 +1874,7 @@ int OnInit()
    strategyLots = calculateStrategyLots(SymbolBid(), SymbolBid() - stopLossDistance);
 
    g_activeTheme=(int)hudTheme;
-   if(g_activeTheme<0||g_activeTheme>5)g_activeTheme=0;
+   if(g_activeTheme<0||g_activeTheme>3)g_activeTheme=HUD_GRAPHITE;
    if(applyChartStyle) ApplyChartStyle();
 
    g_dayKey            = 0;
@@ -1967,7 +1917,7 @@ int OnInit()
    PanelDraw(true);
    if(PanelEnabled()) EventSetTimer(1);
 
-   Print("gold_x9 v6.66 (MQL4) initialised on ", activeTradeSymbol, " digits=", activeSymbolDigits, " point=", DoubleToString(activeSymbolPoint, activeSymbolDigits), " tags=", (drawResultTags ? "on" : "off"), " hud=", (showDashboardPanel ? "on" : "off"));
+   Print("gold_x9 v6.70 (MQL4) initialised on ", activeTradeSymbol, " digits=", activeSymbolDigits, " point=", DoubleToString(activeSymbolPoint, activeSymbolDigits), " tags=", (drawResultTags ? "on" : "off"), " hud=", (showDashboardPanel ? "on" : "off"));
    return(INIT_SUCCEEDED);
   }
 
@@ -1996,27 +1946,8 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
    if(id==CHARTEVENT_OBJECT_CLICK && PanelClick(sparam)) return;
    if((id==CHARTEVENT_CLICK || (id==CHARTEVENT_OBJECT_CLICK && sparam==PC_NAME))
       && PanelTableClick((int)lparam,(int)dparam)) return;
-   if(id==CHARTEVENT_OBJECT_CLICK && StringFind(sparam,HUD_PREFIX+"theme_")==0)
-     {
-      int nt=(int)StringToInteger(StringSubstr(sparam,StringLen(HUD_PREFIX+"theme_")));
-      if(nt>=0 && nt<=5 && nt!=g_activeTheme)
-        {
-         g_activeTheme=nt;
-         EqCanvasDestroy();
-         ObjectsDeleteAll(0,HUD_PREFIX);
-         g_hN=0;
-         ApplyChartStyle();
-         HudLayout();
-         HudCreate();
-         HudLayout();
-         HudTick(true);
-         EqDraw();
-         if(drawResultTags) TagRelayout();
-         PanelDraw(true);
-         ChartRedraw(0);
-        }
-      return;
-     }
+   if(id==CHARTEVENT_OBJECT_CLICK && sparam==HUD_PREFIX+"theme_cycle")
+     { HudCycleTheme(); return; }
    if(id!=CHARTEVENT_CHART_CHANGE)return;
    uint ms=GetTickCount();
    if(ms-g_lastChartChgMs<200)return;
@@ -2463,32 +2394,28 @@ int           g_trkW     = TRK_W;
 double        g_trkScale = 1.0;
 #define TRK_H 150
 
-string ThemeCode()
+// Design 4: exactly four palettes, applied to EVERY chart/table/control surface.
+string HudThemeName()
   {
-   switch(g_activeTheme)
-     {
-      case HUD_DARK_TITANIUM: return "T";
-      case HUD_GOLD_EXECUTIVE: return "G";
-      case HUD_SLATE_PRO: return "S";
-      case HUD_EMERALD_CARBON: return "E";
-      case HUD_ARCTIC_BLUE: return "A";
-      default: return "L";
-     }
+   if(g_activeTheme==HUD_LIGHT) return "LIGHT";
+   if(g_activeTheme==HUD_MIDNIGHT) return "MIDNIGHT";
+   if(g_activeTheme==HUD_EMERALD) return "EMERALD";
+   return "GRAPHITE";
   }
-
-color UiInk(){if(g_activeTheme==HUD_DARK_TITANIUM||g_activeTheme==HUD_EMERALD_CARBON)return C'235,240,244'; return C'5,10,16';}
-color UiDim(){if(g_activeTheme==HUD_DARK_TITANIUM||g_activeTheme==HUD_EMERALD_CARBON)return C'155,166,176'; return C'72,82,91';}
-color UiPanel(){switch(g_activeTheme){case HUD_DARK_TITANIUM:return C'31,38,46';case HUD_GOLD_EXECUTIVE:return C'248,244,232';case HUD_SLATE_PRO:return C'226,233,239';case HUD_EMERALD_CARBON:return C'18,31,29';case HUD_ARCTIC_BLUE:return C'235,246,252';default:return C'241,245,247';}}
-color UiBand(){switch(g_activeTheme){case HUD_DARK_TITANIUM:return C'44,53,63';case HUD_GOLD_EXECUTIVE:return C'235,226,201';case HUD_SLATE_PRO:return C'207,218,227';case HUD_EMERALD_CARBON:return C'27,46,42';case HUD_ARCTIC_BLUE:return C'216,235,246';default:return C'222,230,235';}}
-color UiAccent(){switch(g_activeTheme){case HUD_DARK_TITANIUM:return C'58,181,255';case HUD_GOLD_EXECUTIVE:return C'166,119,24';case HUD_SLATE_PRO:return C'30,91,139';case HUD_EMERALD_CARBON:return C'25,205,141';case HUD_ARCTIC_BLUE:return C'0,119,190';default:return C'8,101,195';}}
-color UiGood(){return (g_activeTheme==HUD_GOLD_EXECUTIVE)?C'25,132,73':C'0,155,83';}
-color UiBad(){return C'220,45,45';}
-color UiAmber(){return (g_activeTheme==HUD_GOLD_EXECUTIVE)?C'184,112,0':C'232,126,0';}
+color UiInk(){return g_activeTheme==HUD_LIGHT?C'22,38,55':C'237,243,249';}
+color UiDim(){return g_activeTheme==HUD_LIGHT?C'94,111,128':C'156,173,191';}
+color UiPanel(){switch(g_activeTheme){case HUD_LIGHT:return C'255,255,255';case HUD_MIDNIGHT:return C'18,29,48';case HUD_EMERALD:return C'19,39,32';default:return C'23,25,31';}}
+color UiBand(){switch(g_activeTheme){case HUD_LIGHT:return C'240,245,250';case HUD_MIDNIGHT:return C'26,43,65';case HUD_EMERALD:return C'27,55,44';default:return C'35,38,46';}}
+color UiBorder(){return g_activeTheme==HUD_LIGHT?C'212,222,232':(g_activeTheme==HUD_EMERALD?C'49,78,65':C'49,62,78');}
+color UiAccent(){switch(g_activeTheme){case HUD_LIGHT:return C'31,98,199';case HUD_MIDNIGHT:return C'83,169,252';case HUD_EMERALD:return C'118,210,165';default:return C'185,203,224';}}
+color UiGood(){return g_activeTheme==HUD_LIGHT?C'12,130,96':C'89,207,169';}
+color UiBad(){return g_activeTheme==HUD_LIGHT?C'190,63,81':C'243,130,145';}
+color UiAmber(){return g_activeTheme==HUD_LIGHT?C'154,108,19':C'226,192,115';}
 color UiCurve(){return UiAccent();}
-color UiChartBg(){switch(g_activeTheme){case HUD_DARK_TITANIUM:return C'12,18,26';case HUD_GOLD_EXECUTIVE:return C'29,32,38';case HUD_SLATE_PRO:return C'21,32,44';case HUD_EMERALD_CARBON:return C'8,20,18';case HUD_ARCTIC_BLUE:return C'226,240,248';default:return C'236,241,245';}}
-color UiChartFg(){return (g_activeTheme==HUD_ARCTIC_BLUE||g_activeTheme==HUD_LIGHT_SPORT)?C'34,45,55':C'191,201,210';}
-color UiBull(){switch(g_activeTheme){case HUD_GOLD_EXECUTIVE:return C'32,176,112';case HUD_EMERALD_CARBON:return C'49,214,154';default:return C'0,151,167';}}
-color UiBear(){return (g_activeTheme==HUD_GOLD_EXECUTIVE)?C'225,162,45':C'235,82,82';}
+color UiChartBg(){switch(g_activeTheme){case HUD_LIGHT:return C'237,242,247';case HUD_MIDNIGHT:return C'9,17,30';case HUD_EMERALD:return C'8,24,18';default:return C'13,14,17';}}
+color UiChartFg(){return UiInk();}
+color UiBull(){return UiGood();}
+color UiBear(){return UiBad();}
 
 color HudDim2() { return UiDim(); }
 
@@ -2506,21 +2433,6 @@ string HudDate(datetime t)
   {
    MqlDateTime st; TimeToStruct(t, st);
    return StringFormat("%d %s %02d:%02d", st.day, MonthStr(st.mon), st.hour, st.min);
-  }
-
-void HudBitmapObj(string name, int panel, int dx, int dy, string resourceName)
-  {
-   if(ObjectFind(0, name) < 0) ObjectCreate(0, name, OBJ_BITMAP_LABEL, 0, 0, 0);
-   ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
-   ObjectSetInteger(0, name, OBJPROP_ANCHOR, ANCHOR_LEFT_UPPER);
-   ObjectSetString (0, name, OBJPROP_BMPFILE, resourceName);
-   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
-   ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
-   ObjectSetInteger(0, name, OBJPROP_BACK, false);
-   if(g_hN < HUD_MAXO)
-     {
-      g_hName[g_hN]=name; g_hPanel[g_hN]=panel; g_hDx[g_hN]=dx; g_hDy[g_hN]=dy; g_hRA[g_hN]=0; g_hSize[g_hN]=0; g_hRect[g_hN]=2; g_hW[g_hN]=0; g_hH[g_hN]=0; g_hN++;
-     }
   }
 
 void HudRectObj(string name, int panel, int dx, int dy, int w, int h, color bgc, color bord)
@@ -2544,7 +2456,7 @@ void HudRectObj(string name, int panel, int dx, int dy, int w, int h, color bgc,
 
 int TextW(string s, int size)
   {
-   return (int)MathCeil(StringLen(s) * size * 0.62) + 2;
+   return (int)MathCeil(StringLen(s) * size * 0.82) + 2;
   }
 
 void HudLabelObj(string name, int panel, int dx, int dy, string text, color c, int size, bool ra, bool bold)
@@ -2576,15 +2488,6 @@ void HudMoveAll()
    for(int i = 0; i < g_hN; i++)
      {
       int p = g_hPanel[i];
-      if(g_hName[i]==HUD_PREFIX+"str_fill")
-         ObjectSetInteger(0,g_hName[i],OBJPROP_YSIZE,g_ph[1]);
-      if(StringFind(g_hName[i],HUD_PREFIX+"str_info")==0)
-        {
-         int row=(int)StringToInteger(StringSubstr(g_hName[i],StringLen(g_hName[i])-1));
-         int rowHeight=(g_ph[1]-40)/10;
-         g_hDy[i]=36+row*rowHeight+((g_hRect[i]==1)?0:3);
-         if(g_hRect[i]==1) ObjectSetInteger(0,g_hName[i],OBJPROP_YSIZE,rowHeight);
-        }
       int x = g_px[p] + g_hDx[i];
       int y = g_py[p] + g_hDy[i];
       if(g_hRect[i] == 0 && g_hRA[i] == 1)
@@ -2601,6 +2504,13 @@ void HudSetText(string name, string text, color c)
   {
    int i = HudFind(name);
    if(i < 0) return;
+   ObjectSetString(0,name,OBJPROP_TOOLTIP,text);
+   if(g_hW[i]>0 && TextW(text,g_hSize[i])>g_hW[i])
+     {
+      while(StringLen(text)>1 && TextW(text+"...",g_hSize[i])>g_hW[i])
+         text=StringSubstr(text,0,StringLen(text)-1);
+      text+="...";
+     }
    ObjectSetString (0, name, OBJPROP_TEXT,  text);
    ObjectSetInteger(0, name, OBJPROP_COLOR, c);
    if(g_hRA[i] == 1)
@@ -2611,97 +2521,141 @@ void HudSetText(string name, string text, color c)
      }
   }
 
+// Layout 4: header + metric ribbon, full-width chart, trade/equity dock, tracker.
+// No bitmap skin or minimum-size inflation: use actual available chart pixels.
+void FocusGeometry(int width,int height)
+  {
+   g_chartW=width;g_chartH=height;
+   g_focusReady=(width>=800 && height>=560);
+   for(int i=0;i<HUD_NP;i++) { g_px[i]=8;g_py[i]=8;g_pw[i]=0;g_ph[i]=0; }
+   if(!g_focusReady) return;
+   g_px[2]=8;g_py[2]=8;g_pw[2]=width-16;g_ph[2]=108;
+   g_px[5]=8;g_py[5]=height-164;g_pw[5]=width-16;g_ph[5]=156;
+   g_px[3]=8;g_py[3]=124;g_pw[3]=width-16;g_ph[3]=g_py[5]-8-g_py[3];
+   int capacity=(int)MathMax(1,(g_ph[3]-42-100-26-44-8)/20);
+   g_focusRows=(int)MathMin(capacity,MathMax(1,MathMin(40,chartTradeRows)));
+   g_focusDockH=44+g_focusRows*20;
+   int equityWidth=showEquityCurve?(int)MathMax(224,MathMin(360,g_pw[3]*0.28)):0;
+   g_focusTableW=g_pw[3]-(equityWidth>0?equityWidth+12:0);
+   g_px[4]=g_px[3]+g_focusTableW+12;
+   g_py[4]=g_py[3]+g_ph[3]-8-g_focusDockH;
+   g_pw[4]=equityWidth;g_ph[4]=g_focusDockH;
+  }
+
 void HudLayout()
   {
-   g_chartW=(int)ChartGetInteger(0,CHART_WIDTH_IN_PIXELS);
-   g_chartH=(int)ChartGetInteger(0,CHART_HEIGHT_IN_PIXELS);
-   if(g_chartW<980) g_chartW=980;
-   if(g_chartH<560) g_chartH=560;
-
-   g_pw[0]=ACC_W; g_ph[0]=ACC_H; g_px[0]=1; g_py[0]=96;
-   g_pw[1]=STR_W; g_ph[1]=(int)MathMax(STR_H,g_chartH-409); g_px[1]=g_chartW-281; g_py[1]=96;
-   g_pw[2]=THM_W; g_ph[2]=THM_H; g_px[2]=1; g_py[2]=2;
-   g_pw[3]=1; g_ph[3]=1; g_px[3]=0; g_py[3]=0;
-   g_pw[4]=EQP_W; g_ph[4]=EQP_H; g_px[4]=g_chartW-281; g_py[4]=g_py[1]+g_ph[1]+8;
-   g_trkW=TRK_W; g_trkScale=1.0; g_pw[5]=TRK_W; g_ph[5]=TRK_H; g_px[5]=1; g_py[5]=g_chartH-152;
+   int width=(int)ChartGetInteger(0,CHART_WIDTH_IN_PIXELS);
+   int height=(int)ChartGetInteger(0,CHART_HEIGHT_IN_PIXELS);
+   bool resized=(width!=g_chartW || height!=g_chartH);
+   FocusGeometry(width,height);
+   if(resized && g_hN>0)
+     {
+      EqCanvasDestroy();
+      ObjectsDeleteAll(0,HUD_PREFIX);
+      g_hN=0;
+      HudCreate();
+     }
    HudMoveAll();
+  }
+
+void HudBoundLabel(string name,int panel,int x,int y,int width,string value,color ink,int size,bool bold)
+  {
+   HudLabelObj(name,panel,x,y,value,ink,size,false,bold);
+   int idx=HudFind(name);
+   if(idx>=0) g_hW[idx]=width;
   }
 
 void HudCreate()
   {
    g_hN=0;
-   string td="::Images\\GX9\\"+ThemeCode()+"\\";
-   HudBitmapObj(HUD_PREFIX+"top_bmp",2,0,0,td+"top.bmp");
-   HudBitmapObj(HUD_PREFIX+"acc_bmp",0,0,0,td+"account.bmp");
-   HudRectObj(HUD_PREFIX+"str_fill",1,0,0,STR_W,g_ph[1],UiPanel(),UiPanel());
-   HudLabelObj(HUD_PREFIX+"str_heading",1,15,10,"STRATEGY / LIVE",UiAccent(),14,false,true);
-   HudBitmapObj(HUD_PREFIX+"eq_bmp",4,0,0,td+"equity.bmp");
-   HudBitmapObj(HUD_PREFIX+"trk_bmp",5,0,0,td+"tracker.bmp");
-   HudBitmapObj(HUD_PREFIX+"bottom_rail",5,0,150,td+"bottom.bmp");
-
-   color paper=UiPanel(), stripe=UiBand(), ink=UiInk();
-   HudRectObj(HUD_PREFIX+"top_m0",2,13,35,213,49,paper,paper);
-   HudRectObj(HUD_PREFIX+"top_m1",2,246,35,169,49,paper,paper);
-   HudRectObj(HUD_PREFIX+"top_m2",2,433,35,195,49,paper,paper);
-   HudRectObj(HUD_PREFIX+"top_m3",2,738,35,74,49,paper,paper);
-   HudRectObj(HUD_PREFIX+"top_m4",2,841,35,99,49,paper,paper);
-   HudRectObj(HUD_PREFIX+"top_m5",2,959,35,108,49,paper,paper);
-   HudRectObj(HUD_PREFIX+"top_ms",2,1077,45,168,31,paper,paper);
-   HudRectObj(HUD_PREFIX+"dd_clear",2,626,8,90,72,paper,paper);
-   HudBitmapObj(HUD_PREFIX+"dd_face",2,628,10,td+"gauge.bmp");
-   for(int dn=0;dn<15;dn++) HudRectObj(HUD_PREFIX+"ddn"+IntegerToString(dn),2,671,52,3,3,UiInk(),UiInk());
-   HudLabelObj(HUD_PREFIX+"top_eq",2,15,33,"0.00",ink,26,false,true);
-   HudLabelObj(HUD_PREFIX+"top_net",2,247,33,"+0.00",UiGood(),26,false,true);
-   HudLabelObj(HUD_PREFIX+"top_dd",2,435,36,"0.0% / 30.0%",ink,21,false,true);
-   HudLabelObj(HUD_PREFIX+"top_spread",2,751,36,"0",ink,24,false,true);
-   HudLabelObj(HUD_PREFIX+"top_pos",2,843,36,"0/10",ink,24,false,true);
-   HudLabelObj(HUD_PREFIX+"top_next",2,960,36,"00:00",ink,24,false,true);
-   HudRectObj(HUD_PREFIX+"top_status_bg",2,1079,47,164,27,UiGood(),C'0,95,52');
-   HudLabelObj(HUD_PREFIX+"top_status",2,1092,50,"TRADING ACTIVE",clrWhite,11,false,true);
-
-   for(int tb=0;tb<6;tb++)
+   if(!g_focusReady)
      {
-      string bn=HUD_PREFIX+"theme_"+IntegerToString(tb);
-      string bf="::Images\\GX9\\B\\"+IntegerToString(tb)+((tb==g_activeTheme)?"s.bmp":"n.bmp");
-      HudBitmapObj(bn,2,1077+tb*28,10,bf);
-      ObjectSetInteger(0,bn,OBJPROP_SELECTABLE,true);
-      ObjectSetInteger(0,bn,OBJPROP_SELECTED,false);
-      ObjectSetInteger(0,bn,OBJPROP_ZORDER,30);
+      HudLabelObj(HUD_PREFIX+"small",2,8,8,"X9: enlarge chart to 800 x 560 for Focus dashboard",UiAccent(),9,false,true);
+      HudMoveAll();return;
      }
-
-   for(int a=0;a<9;a++) HudRectObj(HUD_PREFIX+"acc_mask"+IntegerToString(a),0,166,36+a*30,101,23,(a%2==0)?paper:stripe,(a%2==0)?paper:stripe);
-   for(int av=0;av<5;av++) HudLabelObj(HUD_PREFIX+"acc_V"+IntegerToString(av),0,0,39+av*30,"-",ink,13,true,true);
-   for(int aw=0;aw<4;aw++) HudLabelObj(HUD_PREFIX+"acc_W"+IntegerToString(aw),0,0,39+(aw+5)*30,"-",ink,13,true,true);
-
-   string infoLabels[10];
-   infoLabels[0]="OPEN TOTAL (B/S)"; infoLabels[1]="PENDING TOTAL (B/S)";
-   infoLabels[2]="OPEN LOTS"; infoLabels[3]="SPREAD (POINTS)";
-   infoLabels[4]="DAILY DD"; infoLabels[5]="AVG HOLD (CLOSED)";
-   infoLabels[6]="CLOSED TRADES"; infoLabels[7]="WIN RATE (CLOSED)";
-   infoLabels[8]="S9 TRADES (ALL)"; infoLabels[9]="TOTAL NET P/L";
-   for(int r=0;r<10;r++)
+   int width=g_pw[2];
+   HudRectObj(HUD_PREFIX+"header",2,0,0,width,36,UiPanel(),UiBorder());
+   HudBoundLabel(HUD_PREFIX+"brand",2,12,7,width-360,"X9  /  FULL FOCUS",UiAccent(),14,true);
+   HudBoundLabel(HUD_PREFIX+"market_info",2,245,11,width-600,"-",UiDim(),8,false);
+   HudBoundLabel(HUD_PREFIX+"top_status",2,width-335,10,160,"TRADING ACTIVE",UiGood(),9,true);
+   string theme=HUD_PREFIX+"theme_cycle";
+   ObjectCreate(0,theme,OBJ_BUTTON,0,0,0);
+   ObjectSetInteger(0,theme,OBJPROP_CORNER,CORNER_LEFT_UPPER);
+   ObjectSetInteger(0,theme,OBJPROP_XDISTANCE,g_px[2]+width-167);
+   ObjectSetInteger(0,theme,OBJPROP_YDISTANCE,g_py[2]+5);
+   ObjectSetInteger(0,theme,OBJPROP_XSIZE,158);
+   ObjectSetInteger(0,theme,OBJPROP_YSIZE,26);
+   ObjectSetInteger(0,theme,OBJPROP_BGCOLOR,UiBand());
+   ObjectSetInteger(0,theme,OBJPROP_COLOR,UiAccent());
+   ObjectSetInteger(0,theme,OBJPROP_BORDER_COLOR,UiBorder());
+   ObjectSetInteger(0,theme,OBJPROP_FONTSIZE,9);
+   ObjectSetInteger(0,theme,OBJPROP_ZORDER,50);
+   ObjectSetInteger(0,theme,OBJPROP_HIDDEN,true);
+   ObjectSetInteger(0,theme,OBJPROP_SELECTABLE,false);
+   ObjectSetInteger(0,theme,OBJPROP_STATE,false);
+   ObjectSetString(0,theme,OBJPROP_TEXT,"THEME: "+HudThemeName()+" >");
+   ObjectSetString(0,theme,OBJPROP_TOOLTIP,"Switch Graphite / Light / Midnight / Emerald. Display only; trades unchanged.");
+   string labels[6],ids[6];
+   labels[0]="EQUITY";labels[1]="BALANCE";labels[2]="OPEN P/L";
+   labels[3]="DAILY DD";labels[4]="OPEN POSITIONS";labels[5]="PENDING ORDERS";
+   ids[0]="top_eq";ids[1]="top_balance";ids[2]="acc_W3";
+   ids[3]="top_dd";ids[4]="top_pos";ids[5]="top_pending";
+   for(int i=0;i<6;i++)
      {
-      string ri=IntegerToString(r);
-      HudRectObj(HUD_PREFIX+"str_infoB"+ri,1,8,36+r*16,264,16,(r%2==0)?paper:stripe,paper);
-      HudLabelObj(HUD_PREFIX+"str_infoL"+ri,1,14,39+r*16,infoLabels[r],ink,8,false,true);
-      HudLabelObj(HUD_PREFIX+"str_infoV"+ri,1,0,39+r*16,"-",ink,9,true,true);
+      int x=i*width/6,cellWidth=(i+1)*width/6-x-5;
+      HudRectObj(HUD_PREFIX+"metric"+IntegerToString(i),2,x,44,cellWidth,64,UiPanel(),UiBorder());
+      HudBoundLabel(HUD_PREFIX+"metric_label"+IntegerToString(i),2,x+10,51,cellWidth-20,labels[i],UiDim(),8,true);
+      HudBoundLabel(HUD_PREFIX+ids[i],2,x+10,70,cellWidth-20,"-",UiInk(),g_chartW<1000?16:20,true);
      }
-
-   HudRectObj(HUD_PREFIX+"eq_plotmask",4,12,34,256,96,paper,paper);
-
-   HudRectObj(HUD_PREFIX+"trk_tablemask",5,8,32,1244,110,paper,paper);
-   for(int rr=0;rr<5;rr++) HudRectObj(HUD_PREFIX+"trk_band"+IntegerToString(rr),5,8,50+rr*18,1244,18,(rr%2==0)?paper:stripe,(rr%2==0)?paper:stripe);
-   int cx[7]; cx[0]=17; cx[1]=165; cx[2]=236; cx[3]=307; cx[4]=400; cx[5]=520; cx[6]=710;
-   string hh[7]; hh[0]="DATE"; hh[1]="TRADES"; hh[2]="LOTS"; hh[3]="GAIN%"; hh[4]="COMM"; hh[5]="GROSS P/L"; hh[6]="NET";
-   for(int h=0;h<7;h++) HudLabelObj(HUD_PREFIX+"trk_H"+IntegerToString(h),5,cx[h],33,hh[h],(h==3)?UiGood():ink,10,false,true);
-   for(int r=0;r<5;r++) for(int c=0;c<7;c++) HudLabelObj(HUD_PREFIX+"trk_R"+IntegerToString(r)+"_"+IntegerToString(c),5,cx[c],51+r*18,"-",ink,9,false,true);
-   string ml[5]; ml[0]="WIN RATE"; ml[1]="PROFIT FACTOR"; ml[2]="EXPECTANCY"; ml[3]="COST DRAG"; ml[4]="BEST / WORST";
-   for(int m=0;m<5;m++)
+   HudRectObj(HUD_PREFIX+"trk_bg",5,0,0,g_pw[5],g_ph[5],UiPanel(),UiBorder());
+   HudLabelObj(HUD_PREFIX+"trk_title",5,12,10,"TRADE TRACKER",UiAccent(),12,false,true);
+   bool wide=(g_chartW>=1100);
+   int tableWidth=g_pw[5]-(wide?238:0);
+   for(int band=0;band<5;band++)
+      HudRectObj(HUD_PREFIX+"trk_band"+IntegerToString(band),5,8,52+band*19,tableWidth-16,18,
+         band%2==0?UiBand():UiPanel(),band%2==0?UiBand():UiPanel());
+   int percentages[8];percentages[0]=0;percentages[1]=18;percentages[2]=29;percentages[3]=39;
+   percentages[4]=52;percentages[5]=66;percentages[6]=83;percentages[7]=100;
+   string heads[7];heads[0]="DATE";heads[1]="TRADES";heads[2]="LOTS";
+   heads[3]="GAIN %";heads[4]="COST $";heads[5]="GROSS $";heads[6]="NET $";
+   string unit=AccountCurrency()=="USD"?"$":AccountCurrency();
+   heads[4]="COST "+unit;heads[5]="GROSS "+unit;heads[6]="NET "+unit;
+   for(int c=0;c<7;c++)
      {
-      HudLabelObj(HUD_PREFIX+"trk_SL"+IntegerToString(m),5,808,33+m*22,ml[m],ink,10,false,true);
-      HudLabelObj(HUD_PREFIX+"trk_SV"+IntegerToString(m),5,0,33+m*22,"-",ink,10,true,true);
+      int x=12+(tableWidth-24)*percentages[c]/100;
+      int cw=(tableWidth-24)*(percentages[c+1]-percentages[c])/100-4;
+      HudBoundLabel(HUD_PREFIX+"trk_H"+IntegerToString(c),5,x,35,cw,heads[c],UiDim(),8,true);
+      for(int r=0;r<5;r++)
+         HudBoundLabel(HUD_PREFIX+"trk_R"+IntegerToString(r)+"_"+IntegerToString(c),5,x,55+r*19,cw,"-",UiInk(),9,false);
+     }
+   if(wide)
+     {
+      string titles[5];titles[0]="WIN RATE";titles[1]="PROFIT FACTOR";titles[2]="EXPECTANCY";
+      titles[3]="COST DRAG";titles[4]="BEST / WORST";
+      for(int m=0;m<5;m++)
+        {
+         HudBoundLabel(HUD_PREFIX+"trk_SL"+IntegerToString(m),5,tableWidth+10,12+m*28,98,titles[m],UiDim(),8,true);
+         HudBoundLabel(HUD_PREFIX+"trk_SV"+IntegerToString(m),5,tableWidth+110,12+m*28,116,"-",UiInk(),9,true);
+        }
+     }
+   else
+     {
+      HudLabelObj(HUD_PREFIX+"trk_SL0",5,g_pw[5]-222,12,"WIN",UiDim(),8,false,true);
+      HudLabelObj(HUD_PREFIX+"trk_SV0",5,g_pw[5]-189,11,"-",UiInk(),9,false,true);
+      HudLabelObj(HUD_PREFIX+"trk_SL1",5,g_pw[5]-112,12,"PF",UiDim(),8,false,true);
+      HudLabelObj(HUD_PREFIX+"trk_SV1",5,g_pw[5]-86,11,"-",UiInk(),9,false,true);
      }
    HudMoveAll();
+  }
+
+void HudCycleTheme()
+  {
+   // UI-only rebuild; no OnInit, no trade/risk state reset.
+   g_activeTheme=(g_activeTheme+1)%4;
+   PanelDestroy();EqCanvasDestroy();
+   ObjectsDeleteAll(0,HUD_PREFIX);g_hN=0;
+   if(applyChartStyle) ApplyChartStyle();
+   HudLayout();HudCreate();HudTick(true);PanelDraw(true);EqDraw();
    ChartRedraw(0);
   }
 
@@ -2866,29 +2820,12 @@ void TrackEquityAndDD()
    else g_lotMultiplier = 1.0;
   }
 
-void DrawLiveDDGauge()
-  {
-   double lim=maxAllowedDrawdownPct; if(lim<=0.0)lim=30.0;
-   double ratio=MathMax(0.0,MathMin(1.0,g_currentDD/lim));
-   double ang=3.141592653589793*(1.0-ratio);
-   int cx=g_px[2]+671, cy=g_py[2]+57;
-   color nc=(ratio>=0.85)?UiBad():((ratio>=0.55)?UiAmber():UiInk());
-   for(int i=0;i<15;i++)
-     {
-      double rr=(double)i*2.15;
-      int x=cx+(int)MathRound(MathCos(ang)*rr);
-      int y=cy-(int)MathRound(MathSin(ang)*rr);
-      string nm=HUD_PREFIX+"ddn"+IntegerToString(i);
-      ObjectSetInteger(0,nm,OBJPROP_XDISTANCE,x);
-      ObjectSetInteger(0,nm,OBJPROP_YDISTANCE,y);
-      ObjectSetInteger(0,nm,OBJPROP_BGCOLOR,nc);
-      ObjectSetInteger(0,nm,OBJPROP_COLOR,nc);
-     }
-  }
-
 void HudTick(bool force)
   {
    if(!showDashboardPanel) return;
+   if((int)ChartGetInteger(0,CHART_WIDTH_IN_PIXELS)!=g_chartW ||
+      (int)ChartGetInteger(0,CHART_HEIGHT_IN_PIXELS)!=g_chartH) HudLayout();
+   if(!g_focusReady) return;
    uint ms = GetTickCount();
    if(!force && (ms - g_lastPanelMs) < 1000) return;
    g_lastPanelMs = ms;
@@ -3065,12 +3002,19 @@ void HudTick(bool force)
    string cd=(remain>=3600)?StringFormat("%02d:%02d:%02d",remain/3600,(remain%3600)/60,remain%60):StringFormat("%02d:%02d",remain/60,remain%60);
    HudSetText(HUD_PREFIX+"top_eq",DoubleToString(equity,2),UiInk());
    HudSetText(HUD_PREFIX+"top_net",(totalPL>=0.0?"+":"")+DoubleToString(totalPL,2),(totalPL>=0.0)?UiGood():UiBad());
-   HudSetText(HUD_PREFIX+"top_dd",DoubleToString(g_currentDD,1)+"% / "+DoubleToString(maxAllowedDrawdownPct,1)+"%",ddClr);
-   DrawLiveDDGauge();
+   HudSetText(HUD_PREFIX+"top_dd",DoubleToString(g_currentDD,1)+"%",ddClr);
+   ObjectSetString(0,HUD_PREFIX+"top_dd",OBJPROP_TOOLTIP,"Live DD / limit: "+DoubleToString(g_currentDD,1)+"% / "+DoubleToString(maxAllowedDrawdownPct,1)+"%");
+   HudSetText(HUD_PREFIX+"top_balance",DoubleToString(balance,2),UiInk());
+   HudSetText(HUD_PREFIX+"top_pending",IntegerToString(pendingBuy+pendingSell),UiAmber());
+   ObjectSetString(0,HUD_PREFIX+"top_pending",OBJPROP_TOOLTIP,info[1]);
+
    HudSetText(HUD_PREFIX+"top_spread",IntegerToString(spreadPoints),UiInk());
    HudSetText(HUD_PREFIX+"top_pos",IntegerToString(openCount)+"/"+IntegerToString(activeMaxPositions),UiInk());
    HudSetText(HUD_PREFIX+"top_next",cd,UiInk());
-   HudSetText(HUD_PREFIX+"top_status",statusText,clrWhite);
+   HudSetText(HUD_PREFIX+"market_info","SP "+IntegerToString(spreadPoints)+"  |  NEXT "+cd,UiDim());
+   ObjectSetString(0,HUD_PREFIX+"top_pos",OBJPROP_TOOLTIP,info[0]+" | Managed limit "+IntegerToString(activeMaxPositions));
+   ObjectSetString(0,HUD_PREFIX+"top_balance",OBJPROP_TOOLTIP,"Currency "+AccountCurrency()+" | Free margin "+DoubleToString(AccountFreeMargin(),2)+" | Used margin "+DoubleToString(AccountMargin(),2));
+   HudSetText(HUD_PREFIX+"top_status",statusText,statusColor);
    color sbg=(statusColor==UiGood())?UiGood():((statusColor==UiBad())?UiBad():UiAmber());
    ObjectSetInteger(0,HUD_PREFIX+"top_status_bg",OBJPROP_BGCOLOR,sbg);
    ObjectSetInteger(0,HUD_PREFIX+"top_status_bg",OBJPROP_COLOR,sbg);

@@ -25,6 +25,9 @@ class ChartPanelTests(unittest.TestCase):
         panel = panel.replace('string g_pcHiddenObjects[];', 'vector<string> g_pcHiddenObjects;')
         panel = panel.replace('long g_pcHiddenMasks[];', 'vector<long> g_pcHiddenMasks;')
         panel = panel.replace('PanelTrailState g_panelTrails[];', 'vector<PanelTrailState> g_panelTrails;')
+        palette = SOURCE[SOURCE.index('// Design 4: exactly four palettes'):SOURCE.index('color HudDim2()')]
+        palette = re.sub(r"C'(\d+),(\d+),(\d+)'", r'RGB(\1,\2,\3)', palette)
+        geometry = SOURCE[SOURCE.index('void FocusGeometry(int width,int height)\n  {'):SOURCE.index('void HudLayout()\n  {')]
         stub = r'''
 #include <string>
 #include <vector>
@@ -42,7 +45,8 @@ CHART_COLOR_CHART_LINE=26,CHART_COLOR_BID=27,CHART_COLOR_ASK=28,CHART_COLOR_STOP
 CHART_COLOR_VOLUME=30,CHART_COLOR_GRID=31,CHART_SHOW_PRICE_SCALE=32,CHART_SHOW_DATE_SCALE=33,CHART_SHOW_OHLC=34;
 bool hideOriginalChart=true;
 int chartTradeRows=8;
-color UiPanel(){return 0x1f262e;}
+const int HUD_GRAPHITE=0,HUD_LIGHT=1,HUD_MIDNIGHT=2,HUD_EMERALD=3;
+int g_activeTheme=0;
 #define RGB(r,g,b) ((r<<16)|(g<<8)|b)
 const color clrSilver=0xaaaaaa,clrWhite=0xffffff;
 const int OP_BUY=0,OP_SELL=1,OP_BUYLIMIT=2,OP_SELLLIMIT=3,OP_BUYSTOP=4,OP_SELLSTOP=5;
@@ -58,7 +62,12 @@ const int TAG_MAX=512;
 int g_tagN=0; datetime g_tagTime[TAG_MAX]; double g_tagPrice[TAG_MAX],g_tagProfit[TAG_MAX]; color g_tagClr[TAG_MAX];
 bool showDashboardPanel=true,showLiveChartPanel=true,drawResultTags=true,quoteOK=true;
 string activeTradeSymbol="XAUUSD"; int activeSymbolDigits=2;
-double activeSymbolPoint=0.01; int g_px[6]={1},g_pw[6]={280};
+double activeSymbolPoint=0.01,g_totalClosedPL=290.75; int g_px[6]={},g_pw[6]={},g_py[6]={},g_ph[6]={};
+const int HUD_NP=6;
+int g_chartW=0,g_chartH=0,g_focusRows=4,g_focusDockH=124,g_focusTableW=800;
+bool g_focusReady=false,showEquityCurve=true;
+void FocusGeometry(int width,int height);
+void EqCanvasDestroy(){}void EqDraw(){}
 map<int,long> chart={{1,1},{2,1},{3,1366},{4,700}};
 map<string,string> objects;
 map<string,long> masks;
@@ -69,6 +78,7 @@ bool IsTesting(){return false;} bool IsVisualMode(){return false;}
 long ChartGetInteger(int,int p){return chart[p];}
 void ChartSetInteger(int,int p,long v){chart[p]=v;}
 void ChartRedraw(int){}
+void HudLayout(){FocusGeometry(chart[CHART_WIDTH_IN_PIXELS],chart[CHART_HEIGHT_IN_PIXELS]);}
 int ObjectFind(int,string n){return objects.count(n)?0:-1;}
 bool ObjectCreate(int,string n,int,int,int,int){objects[n]="";return true;}
 void ObjectSetInteger(int,string name,int prop,long value){if(prop==OBJPROP_TIMEFRAMES)masks[name]=value;}
@@ -178,10 +188,11 @@ int main(){
  assert(masks["new_line"]==0);
  assert(chart[CHART_SHOW_PRICE_SCALE]==0);
  assert(chart[CHART_COLOR_CHART_UP]==UiPanel());
- // The table is bottom-anchored; the removed footer adds 44 pixels to candles.
- int oldBottom=g_pcH-52-(36+2*20)-26;
- assert(g_pcBottom==oldBottom+44);
- assert(g_pcBottom+26+36+2*20==g_pcH-PC_TABLE_BOTTOM_GAP);
+ // Full-width chart, separate trade/equity cards aligned directly above tracker.
+ assert(g_pcX==8 && g_pcW==chart[3]-16);
+ assert(g_pcBottom-g_pcTop>=100);
+ assert(g_focusTableW+12+g_pw[4]==g_pcW);
+ assert(g_py[4]+g_ph[4]==g_py[5]-16);
  assert(g_pcLow<4140 && g_pcHigh>4200);
  assert(objects[PC_NAME].find("LIVE |")!=string::npos);assert(contains("BUY"));
  assert(objects[PC_NAME].find("SELL STOP")!=string::npos);
@@ -220,7 +231,7 @@ int main(){
  assert(contains("OPEN 0 | PENDING 13"));assert(contains("PAGE 1/2"));assert(contains("Pending"));
  orders.clear();g_pcTradePage=0;PanelDraw(true);assert(contains("No matching trades"));assert(g_panelTrails.empty());
  orders=savedOrders;clockMs+=300;
- chartTradeRows=4; // Keep the existing smaller-row pagination checks.
+ chartTradeRows=4;HudLayout(); // Keep the existing smaller-row pagination checks.
  // Dense levels must paginate without exceeding the canvas bounds.
  for(int i=0;i<20;i++)orders.push_back(orders[0]);
  PanelDraw(true);
@@ -237,7 +248,7 @@ int main(){
    for(int height=500;height<=900;height+=83){chart[3]=width;chart[4]=height;PanelDraw(true);}
  chart[4]=700;
  chart[3]=1000;PanelDraw(true);assert(g_pcReady); // smallest supported center
- chart[3]=900;PanelDraw(true);assert(!g_pcReady);assert(chart[1]==1&&chart[2]==1);
+ chart[3]=799;PanelDraw(true);assert(!g_pcReady);assert(chart[1]==1&&chart[2]==1);
  chart[3]=1366;PanelDraw(true);assert(g_pcReady);
  showLiveChartPanel=false;PanelDraw(true);assert(!g_pcReady);assert(relayouts>=2);
  showLiveChartPanel=true;g_pc.fail=true;PanelDraw(true);assert(!g_pcReady);assert(chart[1]==1);
@@ -248,7 +259,7 @@ int main(){
 '''
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp)
-            (path/'test.cpp').write_text(stub+panel+main)
+            (path/'test.cpp').write_text(stub+palette+geometry+panel+main)
             subprocess.run(['g++','-std=c++17',str(path/'test.cpp'),'-o',str(path/'test')],check=True)
             subprocess.run([str(path/'test')],check=True)
 
@@ -258,12 +269,9 @@ int main(){
         self.assertIn('MathMin(240,chartStartBars)', SOURCE)
         self.assertIn('MathMax(0,chartStartOffset)', SOURCE)
         self.assertNotIn('"str_S"', SOURCE)
-        self.assertIn('"PENDING TOTAL (B/S)"', SOURCE)
-        self.assertIn('g_py[4]=g_py[1]+g_ph[1]+8;', SOURCE)
-        for height in (640, 700, 900):
-            strategy_height = max(210, height - 409)
-            equity_bottom = 96 + strategy_height + 8 + 145
-            self.assertEqual(equity_bottom, height - 152 - 8)
+        self.assertIn('"PENDING ORDERS"', SOURCE)
+        self.assertIn('g_px[3]=8;g_py[3]=124;g_pw[3]=width-16;', SOURCE)
+        self.assertNotIn('#resource', SOURCE)
 
     def test_trailing_recorded_only_after_modify_success(self):
         management = SOURCE.split('void manageOpenPositions()\n  {')[1].split('void ApplyChartStyle()')[0]

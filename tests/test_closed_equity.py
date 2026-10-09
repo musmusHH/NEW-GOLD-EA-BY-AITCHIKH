@@ -30,9 +30,10 @@ double MathFloor(double x){return floor(x);}double MathRound(double x){return ro
 double MathCeil(double x){return ceil(x);}
 template<class T,size_t N> void ArrayInitialize(T (&v)[N],T x){for(auto &a:v)a=x;}
 const int EQ_PLOT_W=249,COLOR_FORMAT_ARGB_NORMALIZE=0,OBJPROP_BACK=1,OBJPROP_HIDDEN=2,OBJPROP_SELECTABLE=3,OBJPROP_TOOLTIP=4;
+bool g_focusReady=true;
 bool showEquityCurve=true,showDashboardPanel=true,showEquityDDLine=false,objectExists=false;
 uint equityDDLineColor=2;
-int g_pw[6]={0,0,0,0,280,0},g_px[6]={},g_py[6]={};
+int g_pw[6]={0,0,0,0,280,0},g_px[6]={},g_py[6]={},g_ph[6]={0,0,0,0,130,0};
 string HUD_PREFIX="GX9H_";
 uint ColorToARGB(uint c){return c;}uint UiPanel(){return 0;}uint UiCurve(){return 1;}uint UiDim(){return 3;}
 string IntegerToString(int n){return to_string(n);}string DoubleToString(double v,int){return to_string(v);}
@@ -98,15 +99,15 @@ int main(){
  for(int i=0;i<600;i++)history.push_back({i+1,0,2000+i,1,0,0});
  SeedEquityHistory();assert(g_eqN==601 && EqCount()==512);
  double last;datetime t;EqItem(511,last,t);assert(last==700 && t==2599);
- EqDraw();assert(g_eqCanvas.equityLines==480 && g_eqCanvas.ddLines==0);
- showEquityDDLine=true;EqDraw();assert(g_eqCanvas.ddLines==240);
+ EqDraw();assert(g_eqCanvas.equityLines==494 && g_eqCanvas.ddLines==0);
+ showEquityDDLine=true;EqDraw();assert(g_eqCanvas.ddLines==247);
  g_eqN=0;EqPush(100,1);EqPush(90,2);EqPush(120,3);EqPush(100,4);
  assert(abs(g_eqDD[3]-100.0/6.0)<1e-9); // DD is raw, not EMA-smoothed.
- EqDraw();assert(g_eqCanvas.ddLines==240);
+ EqDraw();assert(g_eqCanvas.ddLines==247);
  eqCurveEmaPeriod=1;g_eqN=0;EqPush(100,1);EqPush(90,2);assert(g_eqEMA[1]==90);
  eqCurveSamples=0;EqDraw(); // Invalid sample count is bounded safely.
  g_eqN=0;EqDraw();assert(g_eqCanvas.equityLines==0);
- EqPush(100,1);EqDraw();assert(g_eqCanvas.equityLines==480);
+ EqPush(100,1);EqDraw();assert(g_eqCanvas.equityLines==494);
  showEquityCurve=false;EqDraw();assert(!g_eqCanvasReady && !objectExists);
 }
 '''

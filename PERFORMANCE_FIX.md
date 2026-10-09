@@ -1,3 +1,5 @@
+> **Current UI:** v6.700 uses the Full Focus layout and four themes without GX9 bitmap dependencies. See [FOCUS_DESIGN.md](FOCUS_DESIGN.md) for current installation details. The reporting findings below remain applicable.
+
 # Carryover trade performance fix
 
 Updated source: `GOOOOLD X9 SETINGS.txt` (MQL4).
