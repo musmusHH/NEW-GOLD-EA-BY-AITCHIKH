@@ -20,6 +20,7 @@ class ChartPanelTests(unittest.TestCase):
         # MQL string literals support concatenation directly; C++ needs std::string.
         panel = panel.replace('#define PC_BUTTON "GX9PC_btn_"', 'const string PC_BUTTON="GX9PC_btn_";')
         panel = panel.replace('text+=" "+', 'text+=string(" ")+')
+        panel = panel.replace('int tickets[];', 'vector<int> tickets;')
         stub = r'''
 #include <string>
 #include <vector>
@@ -39,7 +40,7 @@ const int OBJ_BUTTON=0,CORNER_LEFT_UPPER=0,OBJPROP_CORNER=0,OBJPROP_XDISTANCE=1,
 const int OBJPROP_XSIZE=3,OBJPROP_YSIZE=4,OBJPROP_BGCOLOR=5,OBJPROP_COLOR=6,OBJPROP_BORDER_COLOR=7;
 const int OBJPROP_FONTSIZE=8,OBJPROP_HIDDEN=9,OBJPROP_SELECTABLE=10,OBJPROP_ZORDER=11,OBJPROP_STATE=12;
 const int OBJPROP_TEXT=13,OBJPROP_BACK=14,OBJPROP_TOOLTIP=15,COLOR_FORMAT_ARGB_NORMALIZE=0;
-const int SELECT_BY_POS=0,MODE_TRADES=0,TIME_DATE=1,TIME_MINUTES=2,TIME_SECONDS=4;
+const int SELECT_BY_TICKET=1,SELECT_BY_POS=0,MODE_TRADES=0,TIME_DATE=1,TIME_MINUTES=2,TIME_SECONDS=4;
 const string TAG_PREFIX="GX9T_";
 const int TAG_MAX=512;
 int g_tagN=0; datetime g_tagTime[TAG_MAX]; double g_tagPrice[TAG_MAX],g_tagProfit[TAG_MAX]; color g_tagClr[TAG_MAX];
@@ -75,6 +76,7 @@ datetime TimeCurrent(){return latest;}
 int Period(){return 5;}
 template<class T> int ArraySize(vector<T>& v){return v.size();}
 template<class T> int ArrayResize(vector<T>& v,int n){v.resize(n);return n;}
+template<class T> void ArraySort(vector<T>& v){sort(v.begin(),v.end());}
 template<class T> void ArraySetAsSeries(vector<T>&,bool){}
 struct MqlRates {datetime time;double open,high,low,close;};
 struct MqlTick {datetime time;double bid,ask;};
@@ -86,7 +88,13 @@ bool SymbolInfoTick(string,MqlTick &t){t={latest,4184,4184.8};return quoteOK;}
 struct Order {int type;string symbol;int magic;double entry,sl,tp,profit;};
 vector<Order> orders;Order selected;
 int OrdersTotal(){return orders.size();}
-bool OrderSelect(int i,int,int){selected=orders[i];return true;}
+bool OrderSelect(int i,int mode,int){if(mode==SELECT_BY_TICKET){for(auto o:orders)if(12345678+o.type==i){selected=o;return true;}return false;}selected=orders[i];return true;}
+string OrderSymbol(){return selected.symbol;}
+string accountCurrency="USD";
+string AccountCurrency(){return accountCurrency;}
+const int SYMBOL_TRADE_TICK_SIZE=1,SYMBOL_TRADE_TICK_VALUE=2;
+double mockTickSize=0.01,mockTickValue=1;
+double SymbolInfoDouble(string,int prop){return prop==1?mockTickSize:mockTickValue;}
 int OrderCloseTime(){return 0;}
 bool IsMatchingOrderIdentity(){return selected.symbol==activeTradeSymbol && selected.magic==123457;}
 int OrderType(){return selected.type;}int OrderTicket(){return 12345678+selected.type;}
@@ -112,7 +120,24 @@ int main(){
  orders={{OP_BUY,"XAUUSD",123457,4180,4160,4200,1.5},
          {OP_SELLSTOP,"XAUUSD",123457,4155,4190,4140,0},
          {OP_BUYSTOP,"EURUSD",123457,1.1,0,0,0}};
+ selected=orders[0];
+ assert(PanelLiveMoney()=="+1.33");
+ assert(PanelExitMoney(4200)=="+19.83");
+ assert(PanelExitMoney(4160)=="-20.17");
+ assert(PanelExitMoney(0)=="Not set");
+ // Non-point-sized ticks must use the broker's tick size, not pip assumptions.
+ mockTickSize=0.25;mockTickValue=2;assert(PanelExitMoney(4200)=="+1.43");
+ mockTickSize=0.01;mockTickValue=1;
+ selected.type=OP_SELL;assert(PanelExitMoney(4160)=="+19.83");
+ assert(PanelExitMoney(4200)=="-20.17");
+ selected.type=OP_BUYSTOP;assert(PanelLiveMoney()=="Pending");
+ selected.type=OP_SELLSTOP;assert(PanelExitMoney(4160)=="+19.83");
+ mockTickValue=0;assert(PanelExitMoney(4200)=="N/A");mockTickValue=1;
+ mockTickSize=0;assert(PanelExitMoney(4200)=="N/A");mockTickSize=0.01;
  PanelDraw(true);
+ assert(contains("LIVE $"));assert(contains("TP~ $"));assert(contains("SL~ $"));
+ assert(contains("+19.83"));assert(contains("-20.17"));assert(contains("Pending"));
+ accountCurrency="EUR";PanelDraw(true);assert(contains("LIVE EUR"));accountCurrency="USD";
  assert(g_pcReady);assert(chart[1]==0 && chart[2]==0);
  assert(g_pcLow<4140 && g_pcHigh>4200);
  assert(contains("LIVE |"));assert(contains("BUY"));
@@ -133,6 +158,7 @@ int main(){
  // Dense levels must paginate without exceeding the canvas bounds.
  for(int i=0;i<20;i++)orders.push_back(orders[0]);
  PanelDraw(true);PanelClick(PC_BUTTON+"page");assert(g_pcPage==1);
+ PanelClick(PC_BUTTON+"trades");assert(g_pcTradePage==1);
  // Exercise pixel bounds across normal/resized windows and zoom settings.
  for(int width=980;width<=1600;width+=71)
    for(int height=500;height<=900;height+=83){chart[3]=width;chart[4]=height;PanelDraw(true);}

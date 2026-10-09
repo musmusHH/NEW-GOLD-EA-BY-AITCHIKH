@@ -1,4 +1,4 @@
-# Live broker-data chart panel — v6.560
+# Live broker-data chart panel — v6.570
 
 ## Install
 
@@ -22,6 +22,16 @@ All order lines remain at their actual prices. Nearby labels occupy separate row
 
 Up to four non-overlapping closed-result badges are drawn at their candle/close-price coordinates from the existing result-tag cache. `drawResultTags`, the historical tag lookback and the existing cache still govern available results. Badges that would collide with the order-label region are omitted rather than piled on top of it.
 
+## Per-trade money table
+
+A dedicated table below the candles shows **TICKET | TYPE | LIVE $ | TP~ $ | SL~ $** on USD accounts. Other accounts display their actual currency (for example EUR or USC), not a misleading dollar label.
+
+- **LIVE**: current broker profit + accrued swap − the existing dashboard commission estimate. Pending orders show `Pending` rather than a fabricated live result.
+- **TP~ / SL~**: estimated net P/L **from the entry price to that exit price**, not the remaining change from the current quote. Formula: signed price move ÷ broker price tick size × broker tick value × lots, plus currently accrued swap, minus the dashboard commission estimate. A trailing stop above a BUY entry can therefore show a positive SL amount.
+- These are estimates, not guaranteed proceeds: conversion/tick value, future swap/commission and fill/slippage can change the final result. Missing broker tick size/value shows `N/A`; absent TP/SL shows `Not set`.
+- Four trades are visible at normal panel heights. Smaller panels show one or two rows. The **TRADES n/m** button cycles through all matching open and pending orders in ticket order. The table updates alongside the chart and still displays when candle history is loading.
+- TP/SL level labels also include estimated cash results. Hover over the chart for full text if a long value is shortened to fit.
+
 ## Controls
 
 | Control | Action |
@@ -31,6 +41,7 @@ Up to four non-overlapping closed-result badges are drawn at their candle/close-
 | `LIVE` | Return to the forming candle |
 | `ALL` / `BARS` | Toggle price scaling: candles plus all order levels, or candles only (plus current quote in live view) |
 | `TAG>` | Show the next page of order-level labels |
+| `TRADES n/m` | Show the next page of the per-trade money table |
 
 `ALL` makes distant stops/targets visible but can compress the candles. In `BARS`, off-scale levels retain labelled prices with `^`/`v` indicators; they are not falsely drawn at a different price. Order P/L remains **current**, including while browsing historical candles. This is not a historical account replay.
 
@@ -50,3 +61,7 @@ Run `python -m unittest discover -s tests -v` with Python and g++ installed. The
 6. Test with missing history/disconnected quotes and with many closely spaced orders.
 
 Trading signals, ownership of managed positions, order limits, stop management and risk controls are unchanged by this display feature.
+
+### Additional v6.570 demo checks
+
+Compare each ticket with the MT4 Trade tab. Check both BUY and SELL targets/stops, a profitable trailing SL, unset SL/TP, pending orders, and TRADES pagination. Verify currency labels on non-USD accounts. Automated tests additionally cover BUY/SELL cash signs, non-point-sized ticks, missing tick metadata, absent stops, pending status and currency headers.

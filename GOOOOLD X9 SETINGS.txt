@@ -20,7 +20,7 @@
 //+------------------------------------------------------------------+
 #property copyright   "Mr. CapFree"
 #property link        "https://example.com"
-#property version     "6.560"   // Broker-data chart panel + carryover performance
+#property version     "6.570"   // Broker-data chart panel + carryover performance
 #property description "gold x9 MQL4 + LAB M1-M4 + live broker-data chart panel"
 #property strict
 #include <Canvas\Canvas.mqh>
@@ -414,7 +414,7 @@ CCanvas g_pc;
 bool g_pcReady=false, g_pcSaved=false;
 long g_pcOldLevels=0, g_pcOldForeground=0;
 int g_pcX=0, g_pcY=0, g_pcW=0, g_pcH=0;
-int g_pcBars=64, g_pcOffset=0, g_pcPage=0;
+int g_pcBars=64, g_pcOffset=0, g_pcPage=0, g_pcTradePage=0;
 bool g_pcFitOrders=true;
 datetime g_pcLatest=0;
 double g_pcLow=0, g_pcHigh=1;
@@ -516,6 +516,93 @@ string PanelOrderName(int type)
    return "";
   }
 
+// Estimated net account-currency P/L from entry to the selected order's exit.
+string PanelExitMoney(double exitPrice)
+  {
+   if(exitPrice<=0) return "Not set";
+   // SymbolInfoDouble gives a price increment, not a guessed pip size.
+   double tickSize=SymbolInfoDouble(OrderSymbol(),SYMBOL_TRADE_TICK_SIZE);
+   double tickValue=SymbolInfoDouble(OrderSymbol(),SYMBOL_TRADE_TICK_VALUE);
+   if(tickSize<=0 || tickValue<=0) return "N/A";
+   int type=OrderType();
+   bool buy=(type==OP_BUY || type==OP_BUYLIMIT || type==OP_BUYSTOP);
+   double move=buy ? exitPrice-OrderOpenPrice() : OrderOpenPrice()-exitPrice;
+   double net=move/tickSize*tickValue*OrderLots()+OrderSwap()-CommissionCost(OrderLots());
+   return (net>=0?"+":"")+DoubleToString(net,2);
+  }
+
+string PanelLiveMoney()
+  {
+   if(OrderType()!=OP_BUY && OrderType()!=OP_SELL) return "Pending";
+   double net=OrderProfit()+OrderSwap()-CommissionCost(OrderLots());
+   return (net>=0?"+":"")+DoubleToString(net,2);
+  }
+
+void PanelCell(int x,int y,int width,string text,color ink)
+  {
+   if(g_pc.TextWidth(text)>width-4)
+     {
+      while(StringLen(text)>1 && g_pc.TextWidth(text+"...")>width-4)
+         text=StringSubstr(text,0,StringLen(text)-1);
+      text+="...";
+     }
+   PanelText(x,y,text,ink);
+  }
+
+void PanelTradeTable()
+  {
+   int tickets[];
+   for(int i=0;i<OrdersTotal();i++)
+     {
+      if(!OrderSelect(i,SELECT_BY_POS,MODE_TRADES)) continue;
+      if(OrderCloseTime()!=0 || !IsMatchingOrderIdentity()) continue;
+      if(OrderType()<OP_BUY || OrderType()>OP_SELLSTOP) continue;
+      int n=ArraySize(tickets);
+      if(ArrayResize(tickets,n+1)==n+1) tickets[n]=OrderTicket();
+     }
+   // Stable pagination even when the terminal reorders its trade pool.
+   ArraySort(tickets);
+   int pageRows=(g_pcH>=360)?4:((g_pcH>=290)?2:1);
+   int pages=(int)MathMax(1,(ArraySize(tickets)+pageRows-1)/pageRows);
+   g_pcTradePage=g_pcTradePage%pages;
+   int tableTop=g_pcH-52-(36+pageRows*20);
+   g_pcBottom=tableTop-26;
+   g_pc.FillRectangle(8,tableTop,g_pcW-8,g_pcH-51,ColorToARGB(C'20,30,40'));
+   string currency=AccountCurrency();
+   string unit=(currency=="USD")?"$":currency;
+   PanelText(12,tableTop+2,"TRADES "+currency+" | TP/SL ~ estimated net",C'58,181,255');
+   int cols[6];
+   cols[0]=12;
+   cols[1]=12+(g_pcW-24)*22/100;
+   cols[2]=12+(g_pcW-24)*44/100;
+   cols[3]=12+(g_pcW-24)*63/100;
+   cols[4]=12+(g_pcW-24)*82/100;
+   cols[5]=g_pcW-12;
+   string heads[5];
+   heads[0]="TICKET"; heads[1]="TYPE"; heads[2]="LIVE "+unit;
+   heads[3]="TP~ "+unit; heads[4]="SL~ "+unit;
+   for(int h=0;h<5;h++) PanelCell(cols[h],tableTop+18,cols[h+1]-cols[h],heads[h],clrSilver);
+   if(ArraySize(tickets)==0) PanelText(12,tableTop+36,"No matching trades",clrSilver);
+   for(int row=0;row<pageRows;row++)
+     {
+      int index=g_pcTradePage*pageRows+row;
+      if(index>=ArraySize(tickets)) break;
+      if(!OrderSelect(tickets[index],SELECT_BY_TICKET,MODE_TRADES) || OrderCloseTime()!=0) continue;
+      string values[5];
+      values[0]=IntegerToString(OrderTicket()); values[1]=PanelOrderName(OrderType());
+      values[2]=PanelLiveMoney(); values[3]=PanelExitMoney(OrderTakeProfit()); values[4]=PanelExitMoney(OrderStopLoss());
+      for(int c=0;c<5;c++)
+        {
+         color ink=clrSilver;
+         if(c>=2 && StringFind(values[c],"+")==0) ink=C'49,214,154';
+         if(c>=2 && StringFind(values[c],"-")==0) ink=C'245,100,100';
+         PanelCell(cols[c],tableTop+36+row*20,cols[c+1]-cols[c],values[c],ink);
+        }
+     }
+   PanelButton("trades","TRADES "+IntegerToString(g_pcTradePage+1)+"/"+IntegerToString(pages),
+               g_pcX+g_pcW-104,g_pcY+g_pcH-26,96);
+  }
+
 void PanelDraw(bool force)
   {
    if(!PanelEnabled())
@@ -581,6 +668,8 @@ void PanelDraw(bool force)
    PanelButton("range",g_pcFitOrders?"ALL":"BARS",x+w-94,y+5,40);
    PanelButton("page","TAG>",x+w-52,y+5,44);
 
+   PanelTradeTable();
+
    datetime latest=iTime(activeTradeSymbol,Period(),0);
    if(g_pcOffset>0 && latest!=g_pcLatest && g_pcLatest>0)
      {
@@ -613,13 +702,13 @@ void PanelDraw(bool force)
       double net=OrderProfit()+OrderSwap()-CommissionCost(OrderLots());
       string ticket="#"+IntegerToString(OrderTicket());
       string text=ticket+" "+PanelOrderName(type)+" "+DoubleToString(OrderLots(),2);
-      if(market) text+=" "+(net>=0?"+":"")+DoubleToString(net,2);
+      text+=" LIVE "+PanelLiveMoney();
       color ink=market ? (net>=0 ? C'49,214,154' : C'245,100,100') : C'240,178,65';
       PanelAddLevel(levels,OrderOpenPrice(),text,ink);
-      PanelAddLevel(levels,OrderStopLoss(),ticket+" SL",C'245,100,100');
-      PanelAddLevel(levels,OrderTakeProfit(),ticket+" TP",C'49,214,154');
+      PanelAddLevel(levels,OrderStopLoss(),ticket+" SL~ "+PanelExitMoney(OrderStopLoss()),C'245,100,100');
+      PanelAddLevel(levels,OrderTakeProfit(),ticket+" TP~ "+PanelExitMoney(OrderTakeProfit()),C'49,214,154');
      }
-   string detail="Live order levels (display only; P/L uses dashboard commission settings):";
+   string detail="Amounts in "+AccountCurrency()+"; live P/L uses dashboard commission settings. TP/SL estimate net from entry, including current swap; future costs/slippage may differ.";
    for(int tip=0;tip<ArraySize(levels);tip++)
       detail+="\n"+levels[tip].text+" @"+DoubleToString(levels[tip].price,activeSymbolDigits);
    ObjectSetString(0,PC_NAME,OBJPROP_TOOLTIP,detail);
@@ -725,7 +814,7 @@ void PanelDraw(bool force)
    string feed=quoted ? "Tick "+TimeToString(tick.time,TIME_SECONDS) : "No quote";
    if(quoted && (TimeCurrent()-tick.time>60 || nowMs-g_pcQuoteSeenMs>60000)) feed+=" (STALE)";
    string footer=(g_pcOffset==0?"LIVE | ":"HISTORY | ")+feed+" | Tags "+IntegerToString(g_pcPage+1)+"/"+IntegerToString(pages);
-   PanelText(12,h-20,footer,C'58,181,255');
+   PanelCell(12,h-20,w-124,footer,C'58,181,255');
    g_pc.Update();
   }
 
@@ -740,6 +829,7 @@ bool PanelClick(string name)
    if(key=="live") g_pcOffset=0;
    if(key=="range") g_pcFitOrders=!g_pcFitOrders;
    if(key=="page") g_pcPage++;
+   if(key=="trades") g_pcTradePage++;
    PanelDraw(true);
    ChartRedraw(0);
    return true;
@@ -1673,7 +1763,7 @@ int OnInit()
    PanelDraw(true);
    if(PanelEnabled()) EventSetTimer(1);
 
-   Print("gold_x9 v6.56 (MQL4) initialised on ", activeTradeSymbol, " digits=", activeSymbolDigits, " point=", DoubleToString(activeSymbolPoint, activeSymbolDigits), " tags=", (drawResultTags ? "on" : "off"), " hud=", (showDashboardPanel ? "on" : "off"));
+   Print("gold_x9 v6.57 (MQL4) initialised on ", activeTradeSymbol, " digits=", activeSymbolDigits, " point=", DoubleToString(activeSymbolPoint, activeSymbolDigits), " tags=", (drawResultTags ? "on" : "off"), " hud=", (showDashboardPanel ? "on" : "off"));
    return(INIT_SUCCEEDED);
   }
 
