@@ -20,9 +20,10 @@
 //+------------------------------------------------------------------+
 #property copyright   "Mr. CapFree"
 #property link        "https://example.com"
-#property version     "6.550"   // HighViz HUD + Simple Result & Points Tags
-#property description "gold x9 v6.3 MQL4 port + LAB M1-M4 + Simple Result Tags"
+#property version     "6.560"   // Broker-data chart panel + carryover performance
+#property description "gold x9 MQL4 + LAB M1-M4 + live broker-data chart panel"
 #property strict
+#include <Canvas\Canvas.mqh>
 
 //--- Six embedded professional HUD themes --------------------------
 #resource "\\Images\\GX9\\L\\top.bmp"
@@ -153,6 +154,7 @@ input color  bullBodyColor         = C'255,255,255';    // Bull Candle Body
 input color  bullWickColor         = C'176,137,30';    // Bull Candle Wick
 input color  bearBodyColor         = C'219,181,65';     // Bear Candle Body
 input color  bearWickColor         = C'176,137,30';     // Bear Candle Wick
+input bool   showLiveChartPanel   = true;             // Real broker candles + order overlay in middle panel
 input bool   showDashboardPanel    = true;             // Show The 6-Panel CARBON GRID HUD
 input bool   showSpreadTag         = true;             // Show LIVE Panel (spread/PL/pips/lots/countdown)
 input color  panelBackground       = C'241,245,247';      // Panel Background
@@ -374,6 +376,8 @@ double        selPrice    = 0.0;
 int           selMagic    = 0;
 string        selSymbol   = "";
 
+bool IsMatchingOrderIdentity();
+
 // Function prototypes
 void   activateStrategyContext();
 double findSwingPoints(ENUM_TIMEFRAMES tf, bool findHigh);
@@ -402,6 +406,344 @@ void   RefreshStats();
 void   EqPush(double v, datetime t);
 void   EqCellSet(string name, int x, int y, int w, int h, color clr, bool used);
 void   EqDraw();
+
+//=== Broker-data chart panel (display only; never sends/modifies orders) ===
+#define PC_NAME "GX9PC_chart"
+#define PC_BUTTON "GX9PC_btn_"
+CCanvas g_pc;
+bool g_pcReady=false, g_pcSaved=false;
+long g_pcOldLevels=0, g_pcOldForeground=0;
+int g_pcX=0, g_pcY=0, g_pcW=0, g_pcH=0;
+int g_pcBars=64, g_pcOffset=0, g_pcPage=0;
+bool g_pcFitOrders=true;
+datetime g_pcLatest=0;
+double g_pcLow=0, g_pcHigh=1;
+int g_pcTop=42, g_pcBottom=0, g_pcRight=0;
+uint g_pcLastMs=0, g_pcQuoteSeenMs=0;
+datetime g_pcQuoteTime=0;
+struct PanelLevel
+  {
+   double price;
+   string text;
+   color ink;
+  };
+
+bool PanelEnabled()
+  {
+   return showDashboardPanel && showLiveChartPanel && (!IsTesting() || IsVisualMode());
+  }
+
+void PanelRestore()
+  {
+   if(!g_pcSaved) return;
+   ChartSetInteger(0,CHART_SHOW_TRADE_LEVELS,g_pcOldLevels);
+   ChartSetInteger(0,CHART_FOREGROUND,g_pcOldForeground);
+   g_pcSaved=false;
+  }
+
+void PanelDestroy()
+  {
+   if(g_pcReady) g_pc.Destroy();
+   g_pcReady=false;
+   ObjectsDeleteAll(0,PC_BUTTON);
+   PanelRestore();
+  }
+
+int PanelPriceY(double price)
+  {
+   if(g_pcHigh<=g_pcLow) return g_pcBottom;
+   double fraction=(g_pcHigh-price)/(g_pcHigh-g_pcLow);
+   return (int)MathRound(g_pcTop+MathMax(0.0,MathMin(1.0,fraction))*(g_pcBottom-g_pcTop));
+  }
+
+int PanelBarX(int index,int count)
+  {
+   return 12+(int)MathRound((count-1-index+0.5)*(g_pcRight-20)/(double)count);
+  }
+
+void PanelText(int x,int y,string text,color ink)
+  {
+   g_pc.TextOut(x,y,text,ColorToARGB(ink));
+  }
+
+void PanelDash(int y,color ink)
+  {
+   for(int x=10;x<g_pcRight;x+=9)
+      g_pc.Line(x,y,(int)MathMin(x+4,g_pcRight),y,ColorToARGB(ink,150));
+  }
+
+void PanelButton(string key,string caption,int x,int y,int width)
+  {
+   string name=PC_BUTTON+key;
+   if(ObjectFind(0,name)<0) ObjectCreate(0,name,OBJ_BUTTON,0,0,0);
+   ObjectSetInteger(0,name,OBJPROP_CORNER,CORNER_LEFT_UPPER);
+   ObjectSetInteger(0,name,OBJPROP_XDISTANCE,x);
+   ObjectSetInteger(0,name,OBJPROP_YDISTANCE,y);
+   ObjectSetInteger(0,name,OBJPROP_XSIZE,width);
+   ObjectSetInteger(0,name,OBJPROP_YSIZE,22);
+   ObjectSetInteger(0,name,OBJPROP_BGCOLOR,C'34,47,60');
+   ObjectSetInteger(0,name,OBJPROP_COLOR,clrWhite);
+   ObjectSetInteger(0,name,OBJPROP_BORDER_COLOR,C'58,78,96');
+   ObjectSetInteger(0,name,OBJPROP_FONTSIZE,8);
+   ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
+   ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
+   ObjectSetInteger(0,name,OBJPROP_ZORDER,50);
+   ObjectSetInteger(0,name,OBJPROP_STATE,false);
+   ObjectSetString(0,name,OBJPROP_TEXT,caption);
+  }
+
+void PanelAddLevel(PanelLevel &levels[],double price,string text,color ink)
+  {
+   if(price<=0) return;
+   int n=ArraySize(levels);
+   if(ArrayResize(levels,n+1)!=n+1) return;
+   levels[n].price=price;
+   levels[n].text=text;
+   levels[n].ink=ink;
+  }
+
+string PanelOrderName(int type)
+  {
+   switch(type)
+     {
+      case OP_BUY: return "BUY";
+      case OP_SELL: return "SELL";
+      case OP_BUYSTOP: return "BUY STOP";
+      case OP_SELLSTOP: return "SELL STOP";
+      case OP_BUYLIMIT: return "BUY LIMIT";
+      case OP_SELLLIMIT: return "SELL LIMIT";
+     }
+   return "";
+  }
+
+void PanelDraw(bool force)
+  {
+   if(!PanelEnabled())
+     {
+      bool wasReady=g_pcReady;
+      PanelDestroy();
+      if(wasReady && drawResultTags) TagRelayout();
+      return;
+     }
+   uint nowMs=GetTickCount();
+   if(!force && g_pcReady && nowMs-g_pcLastMs<200) return;
+   g_pcLastMs=nowMs;
+   // Use actual window size, not the HUD's minimum-size assumptions.
+   int cw=(int)ChartGetInteger(0,CHART_WIDTH_IN_PIXELS);
+   int ch=(int)ChartGetInteger(0,CHART_HEIGHT_IN_PIXELS);
+   int x=g_px[0]+g_pw[0]+8, y=96;
+   int w=cw-281-8-x, h=ch-152-8-y;
+   // Fall back to native chart if there is not enough room for a readable panel.
+   if(w<400 || h<240)
+     {
+      bool hadPanel=g_pcReady;
+      PanelDestroy();
+      if(hadPanel && drawResultTags) TagRelayout();
+      return;
+     }
+   if(!g_pcReady || w!=g_pcW || h!=g_pcH || x!=g_pcX || y!=g_pcY)
+     {
+      if(g_pcReady) g_pc.Destroy();
+      ObjectsDeleteAll(0,PC_BUTTON); // Recreate controls above the new bitmap.
+      g_pcReady=false;
+      if(!g_pc.CreateBitmapLabel(0,0,PC_NAME,x,y,w,h,COLOR_FORMAT_ARGB_NORMALIZE))
+        {
+         Print("gold_x9: custom chart allocation failed: ",GetLastError());
+         g_pc.Destroy(); // Also release partially allocated resources.
+         PanelDestroy();
+         if(drawResultTags) TagRelayout();
+         return;
+        }
+      g_pcReady=true; g_pcX=x; g_pcY=y; g_pcW=w; g_pcH=h;
+      g_pc.FontSet("Consolas",-90);
+      ObjectSetInteger(0,PC_NAME,OBJPROP_BACK,false);
+      ObjectSetInteger(0,PC_NAME,OBJPROP_SELECTABLE,false);
+      ObjectSetInteger(0,PC_NAME,OBJPROP_HIDDEN,true);
+      if(!g_pcSaved)
+        {
+         g_pcOldLevels=ChartGetInteger(0,CHART_SHOW_TRADE_LEVELS);
+         g_pcOldForeground=ChartGetInteger(0,CHART_FOREGROUND);
+         g_pcSaved=true;
+        }
+      ChartSetInteger(0,CHART_SHOW_TRADE_LEVELS,false);
+      ChartSetInteger(0,CHART_FOREGROUND,false);
+      // Replace native result objects, keeping their history state intact.
+      ObjectsDeleteAll(0,TAG_PREFIX);
+     }
+   g_pc.Erase(ColorToARGB(C'12,18,26'));
+   g_pcRight=w-83; g_pcBottom=h-52;
+   PanelText(10,9,activeTradeSymbol+" M"+IntegerToString(Period()),C'58,181,255');
+   PanelButton("in","+",x+w-240,y+5,24);
+   PanelButton("out","-",x+w-214,y+5,24);
+   PanelButton("older","<",x+w-188,y+5,24);
+   PanelButton("newer",">",x+w-162,y+5,24);
+   PanelButton("live","LIVE",x+w-136,y+5,40);
+   PanelButton("range",g_pcFitOrders?"ALL":"BARS",x+w-94,y+5,40);
+   PanelButton("page","TAG>",x+w-52,y+5,44);
+
+   datetime latest=iTime(activeTradeSymbol,Period(),0);
+   if(g_pcOffset>0 && latest!=g_pcLatest && g_pcLatest>0)
+     {
+      int delta=iBarShift(activeTradeSymbol,Period(),g_pcLatest,true);
+      if(delta>0) g_pcOffset+=delta;
+     }
+   g_pcLatest=latest;
+   int available=iBars(activeTradeSymbol,Period());
+   g_pcOffset=(int)MathMax(0,MathMin(g_pcOffset,MathMax(0,available-10)));
+   MqlRates rates[];
+   ArraySetAsSeries(rates,true);
+   int count=CopyRates(activeTradeSymbol,(ENUM_TIMEFRAMES)Period(),g_pcOffset,g_pcBars,rates);
+   if(count<2)
+     {
+      PanelText(15,65,"Waiting for broker candle history...",clrSilver);
+      g_pc.Update(); return;
+     }
+   // Use actual broker OHLC, including the forming candle. Never invent candles.
+   g_pcLow=rates[0].low; g_pcHigh=rates[0].high;
+   for(int i=1;i<count;i++)
+     { g_pcLow=MathMin(g_pcLow,rates[i].low); g_pcHigh=MathMax(g_pcHigh,rates[i].high); }
+   PanelLevel levels[];
+   for(int pos=0;pos<OrdersTotal();pos++)
+     {
+      if(!OrderSelect(pos,SELECT_BY_POS,MODE_TRADES)) continue;
+      if(OrderCloseTime()!=0 || !IsMatchingOrderIdentity()) continue;
+      int type=OrderType();
+      if(type<OP_BUY || type>OP_SELLSTOP) continue;
+      bool market=(type==OP_BUY || type==OP_SELL);
+      double net=OrderProfit()+OrderSwap()-CommissionCost(OrderLots());
+      string ticket="#"+IntegerToString(OrderTicket());
+      string text=ticket+" "+PanelOrderName(type)+" "+DoubleToString(OrderLots(),2);
+      if(market) text+=" "+(net>=0?"+":"")+DoubleToString(net,2);
+      color ink=market ? (net>=0 ? C'49,214,154' : C'245,100,100') : C'240,178,65';
+      PanelAddLevel(levels,OrderOpenPrice(),text,ink);
+      PanelAddLevel(levels,OrderStopLoss(),ticket+" SL",C'245,100,100');
+      PanelAddLevel(levels,OrderTakeProfit(),ticket+" TP",C'49,214,154');
+     }
+   string detail="Live order levels (display only; P/L uses dashboard commission settings):";
+   for(int tip=0;tip<ArraySize(levels);tip++)
+      detail+="\n"+levels[tip].text+" @"+DoubleToString(levels[tip].price,activeSymbolDigits);
+   ObjectSetString(0,PC_NAME,OBJPROP_TOOLTIP,detail);
+   MqlTick tick;
+   bool quoted=SymbolInfoTick(activeTradeSymbol,tick) && tick.bid>0;
+   if(quoted && (g_pcQuoteTime!=tick.time || g_pcQuoteSeenMs==0))
+     { g_pcQuoteTime=tick.time; g_pcQuoteSeenMs=nowMs; }
+   if(g_pcOffset==0 && quoted)
+     { g_pcLow=MathMin(g_pcLow,tick.bid); g_pcHigh=MathMax(g_pcHigh,MathMax(tick.bid,tick.ask)); }
+   if(g_pcFitOrders)
+      for(int l=0;l<ArraySize(levels);l++)
+        { g_pcLow=MathMin(g_pcLow,levels[l].price); g_pcHigh=MathMax(g_pcHigh,levels[l].price); }
+   double pad=MathMax((g_pcHigh-g_pcLow)*0.08,activeSymbolPoint*10);
+   g_pcLow-=pad; g_pcHigh+=pad;
+   for(int grid=0;grid<=4;grid++)
+     {
+      double price=g_pcLow+(g_pcHigh-g_pcLow)*grid/4.0;
+      int gy=PanelPriceY(price);
+      g_pc.Line(10,gy,g_pcRight,gy,ColorToARGB(C'33,46,59'));
+      PanelText(g_pcRight+5,gy-6,DoubleToString(price,activeSymbolDigits),clrSilver);
+     }
+   int body=(int)MathMax(1,MathMin(9,(g_pcRight-20)/count-2));
+   for(int bar=count-1;bar>=0;bar--)
+     {
+      int bx=PanelBarX(bar,count);
+      uint ink=ColorToARGB(rates[bar].close>=rates[bar].open ? C'0,190,170' : C'235,82,82');
+      g_pc.Line(bx,PanelPriceY(rates[bar].high),bx,PanelPriceY(rates[bar].low),ink);
+      int top=PanelPriceY(MathMax(rates[bar].open,rates[bar].close));
+      int bottom=(int)MathMin(g_pcBottom,MathMax(top+1,PanelPriceY(MathMin(rates[bar].open,rates[bar].close))));
+      g_pc.FillRectangle(bx-body/2,top,bx+body/2,bottom,ink);
+     }
+   // Every level remains at its true price; labels use separate stacked rows
+   // with connector lines, so nearby entries never overwrite each other.
+   for(int a=1;a<ArraySize(levels);a++)
+     {
+      PanelLevel v=levels[a]; int b=a-1;
+      while(b>=0)
+        {
+         if(levels[b].price>=v.price) break;
+         levels[b+1]=levels[b]; b--;
+        }
+      levels[b+1]=v;
+     }
+   int rows=(int)MathMax(1,(g_pcBottom-g_pcTop-8)/18);
+   int pages=(int)MathMax(1,(ArraySize(levels)+rows-1)/rows);
+   g_pcPage=g_pcPage%pages;
+   for(int line=0;line<ArraySize(levels);line++)
+     {
+      bool inRange=(levels[line].price>=g_pcLow && levels[line].price<=g_pcHigh);
+      int ly=PanelPriceY(levels[line].price);
+      if(inRange) PanelDash(ly,levels[line].ink);
+      if(line/rows!=g_pcPage) continue;
+      int labelY=g_pcTop+4+(line%rows)*18;
+      string label=levels[line].text+" @"+DoubleToString(levels[line].price,activeSymbolDigits);
+      if(!inRange) label+=(levels[line].price>g_pcHigh?" ^":" v");
+      // Width bounds keep labels and connectors inside the plot at any zoom.
+      int labelW=(int)MathMin(g_pcRight-125,g_pc.TextWidth(label)+8);
+      if(g_pc.TextWidth(label)>labelW-8)
+        {
+         while(g_pc.TextWidth(label+"...")>labelW-8 && StringLen(label)>4)
+            label=StringSubstr(label,0,StringLen(label)-1);
+         label+="..."; // Full ticket/price details are available in the panel tooltip.
+        }
+      if(inRange) g_pc.Line(labelW+16,labelY+7,g_pcRight-2,ly,ColorToARGB(levels[line].ink,120));
+      g_pc.FillRectangle(12,labelY,16+labelW,labelY+15,ColorToARGB(C'20,30,40',235));
+      PanelText(16,labelY,label,levels[line].ink);
+     }
+   // A few time-anchored realized results from the existing tag cache.
+   int marked=0; int lastX[4]; int lastY[4];
+   if(drawResultTags)
+      for(int k=g_tagN-1;k>=MathMax(0,g_tagN-TAG_MAX) && marked<4;k--)
+        {
+         int slot=k%TAG_MAX;
+         if(g_tagTime[slot]<rates[count-1].time) continue;
+         int shift=iBarShift(activeTradeSymbol,Period(),g_tagTime[slot],false)-g_pcOffset;
+         if(shift<0 || shift>=count) continue;
+         if(g_tagPrice[slot]<g_pcLow || g_tagPrice[slot]>g_pcHigh) continue;
+         int mx=PanelBarX(shift,count), my=PanelPriceY(g_tagPrice[slot]);
+         // Keep result badges out of the occupied order-label region.
+         int usedRows=(int)MathMin(rows,ArraySize(levels)-g_pcPage*rows);
+         if(ArraySize(levels)>0 && mx<g_pcRight-100 && my<g_pcTop+4+usedRows*18) continue;
+         if(my<g_pcTop+12 || my>g_pcBottom-18) continue;
+         bool collision=false;
+         for(int c=0;c<marked;c++)
+            if(MathAbs(mx-lastX[c])<80 && MathAbs(my-lastY[c])<22) collision=true;
+         if(collision) continue;
+         string result=(g_tagProfit[slot]>=0?"+":"")+DoubleToString(g_tagProfit[slot],2);
+         int rw=g_pc.TextWidth(result)+8;
+         int rx=(int)MathMin(mx,g_pcRight-rw);
+         g_pc.FillRectangle(rx,my,rx+rw,my+14,ColorToARGB(C'20,30,40'));
+         PanelText(rx+4,my,result,g_tagClr[slot]);
+         lastX[marked]=mx; lastY[marked]=my; marked++;
+        }
+   if(quoted && tick.bid>=g_pcLow && tick.bid<=g_pcHigh)
+     {
+      int by=PanelPriceY(tick.bid);
+      PanelDash(by,C'58,181,255');
+      g_pc.FillRectangle(g_pcRight+1,by-7,w-2,by+8,ColorToARGB(C'18,90,130'));
+      PanelText(g_pcRight+4,by-6,DoubleToString(tick.bid,activeSymbolDigits),clrWhite);
+     }
+   PanelText(12,g_pcBottom+9,TimeToString(rates[count-1].time,TIME_DATE|TIME_MINUTES),clrSilver);
+   PanelText((int)MathMax(165,g_pcRight-110),g_pcBottom+9,TimeToString(rates[0].time,TIME_MINUTES),clrSilver);
+   string feed=quoted ? "Tick "+TimeToString(tick.time,TIME_SECONDS) : "No quote";
+   if(quoted && (TimeCurrent()-tick.time>60 || nowMs-g_pcQuoteSeenMs>60000)) feed+=" (STALE)";
+   string footer=(g_pcOffset==0?"LIVE | ":"HISTORY | ")+feed+" | Tags "+IntegerToString(g_pcPage+1)+"/"+IntegerToString(pages);
+   PanelText(12,h-20,footer,C'58,181,255');
+   g_pc.Update();
+  }
+
+bool PanelClick(string name)
+  {
+   if(StringFind(name,PC_BUTTON)!=0) return false;
+   string key=StringSubstr(name,StringLen(PC_BUTTON));
+   if(key=="in") g_pcBars=(int)MathMax(16,g_pcBars-16);
+   if(key=="out") g_pcBars=(int)MathMin(240,g_pcBars+16);
+   if(key=="older") g_pcOffset+=g_pcBars/2;
+   if(key=="newer") g_pcOffset=(int)MathMax(0,g_pcOffset-g_pcBars/2);
+   if(key=="live") g_pcOffset=0;
+   if(key=="range") g_pcFitOrders=!g_pcFitOrders;
+   if(key=="page") g_pcPage++;
+   PanelDraw(true);
+   ChartRedraw(0);
+   return true;
+  }
 
 double SymbolAsk()         { return MarketInfo(activeTradeSymbol, MODE_ASK); }
 double SymbolBid()         { return MarketInfo(activeTradeSymbol, MODE_BID); }
@@ -646,11 +988,10 @@ int ParseSid(string comment)
   }
 
 
-bool IsMatchingOrder()
+bool IsMatchingOrderIdentity()
   {
+   // Shared reporting identity; pending levels use this without market-type gating.
    if(OrderSymbol() != activeTradeSymbol) return false;
-   int t = OrderType();
-   if(t != OP_BUY && t != OP_SELL) return false;
    if(!tagOnlyMyMagic) return true;
    if(filterMatchMode == MATCH_ALL_SYMBOL) return true;
 
@@ -667,6 +1008,13 @@ bool IsMatchingOrder()
    if(filterMatchMode == MATCH_MAGIC_ONLY)     return magicMatch;
    if(filterMatchMode == MATCH_COMMENT_ONLY)   return commentMatch;
    return (magicMatch || commentMatch);
+  }
+
+bool IsMatchingOrder()
+  {
+   int t=OrderType();
+   if(t!=OP_BUY && t!=OP_SELL) return false;
+   return IsMatchingOrderIdentity();
   }
 
 bool TagSeen(int ticket, datetime ct)
@@ -795,6 +1143,7 @@ void TagBoxCardDraw(string name, datetime t, double p, string text, color border
 
 void TagRelayout()
   {
+   if(g_pcReady) return; // Custom panel draws its own clipped result badges.
    // Array tracking which slot indices have been merged/processed
    bool processed[TAG_MAX];
    ArrayInitialize(processed, false);
@@ -1321,20 +1670,32 @@ int OnInit()
 
    HudTick(true);
    EqDraw();
+   PanelDraw(true);
+   if(PanelEnabled()) EventSetTimer(1);
 
-   Print("gold_x9 v6.55 (MQL4) initialised on ", activeTradeSymbol, " digits=", activeSymbolDigits, " point=", DoubleToString(activeSymbolPoint, activeSymbolDigits), " tags=", (drawResultTags ? "on" : "off"), " hud=", (showDashboardPanel ? "on" : "off"));
+   Print("gold_x9 v6.56 (MQL4) initialised on ", activeTradeSymbol, " digits=", activeSymbolDigits, " point=", DoubleToString(activeSymbolPoint, activeSymbolDigits), " tags=", (drawResultTags ? "on" : "off"), " hud=", (showDashboardPanel ? "on" : "off"));
    return(INIT_SUCCEEDED);
   }
 
 void OnDeinit(const int reason)
   {
+   EventKillTimer();
+   PanelDestroy();
    ObjectsDeleteAll(0, HUD_PREFIX);
    if(!tagKeepOnExit) TagDeleteAll();
+   else if(drawResultTags) TagRelayout(); // Recreate native tags when keeping them on exit.
    ChartRedraw(0);
+  }
+
+void OnTimer()
+  {
+   // Display-only refresh: no order-management calls from the timer.
+   PanelDraw(false);
   }
 
 void OnChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam)
   {
+   if(id==CHARTEVENT_OBJECT_CLICK && PanelClick(sparam)) return;
    if(id==CHARTEVENT_OBJECT_CLICK && StringFind(sparam,HUD_PREFIX+"theme_")==0)
      {
       int nt=(int)StringToInteger(StringSubstr(sparam,StringLen(HUD_PREFIX+"theme_")));
@@ -1350,6 +1711,7 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
          HudTick(true);
          EqDraw();
          if(drawResultTags) TagRelayout();
+         PanelDraw(true);
          ChartRedraw(0);
         }
       return;
@@ -1360,6 +1722,7 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
    g_lastChartChgMs=ms;
    if(showDashboardPanel){HudLayout();EqDraw();}
    if(drawResultTags)TagRelayout();
+   PanelDraw(true);
   }
 
 void OnTick()
@@ -1368,6 +1731,7 @@ void OnTick()
    TrackEquityAndDD();
    HudTick(false);
    TagScan(false);
+   PanelDraw(false);
 
    datetime now = TimeCurrent();
    int exitIntervalSeconds = PeriodSeconds(activeExitTimeFrame);
