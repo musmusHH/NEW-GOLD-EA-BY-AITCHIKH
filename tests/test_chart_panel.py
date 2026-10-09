@@ -134,16 +134,16 @@ double OrderProfit(){return selected.profit;}double OrderSwap(){return -0.1;}
 double OrderLots(){return 0.01;}double CommissionCost(double lots){return lots*7;}
 double OrderOpenPrice(){return selected.entry;}double OrderStopLoss(){return selected.sl;}double OrderTakeProfit(){return selected.tp;}
 struct CCanvas {
- int w=0,h=0,updates=0;bool fail=false;vector<string> text;
+ int w=0,h=0,updates=0;bool fail=false;vector<string> text;vector<pair<int,int>> positions;
  bool CreateBitmapLabel(int,int,string n,int,int,int W,int H,int){w=W;h=H;objects[n]="";return !fail;}
  void Destroy(){objects.erase("GX9PC_chart");}
  void FontSet(string,int){}
  void point(int x,int y){assert(x>=0&&x<w&&y>=0&&y<h);}
- void TextOut(int x,int y,string s,uint){point(x,y);text.push_back(s);}
+ void TextOut(int x,int y,string s,uint){point(x,y);text.push_back(s);positions.push_back({x,y});}
  int TextWidth(string s){return s.size()*6;}
  void Line(int x,int y,int X,int Y,uint){point(x,y);point(X,Y);}
  void FillRectangle(int x,int y,int X,int Y,uint){point(x,y);point(X,Y);assert(X>=x&&Y>=y);}
- void Erase(uint){text.clear();}void Update(){updates++;}
+ void Erase(uint){text.clear();positions.clear();}void Update(){updates++;}
 };
 '''
         main = r'''
@@ -306,6 +306,29 @@ int main(){
  assert(masks["old_result_box"]==63&&masks["manual_line"]==7&&masks["new_line"]==15);
  assert(chart[CHART_MOUSE_SCROLL]==1 && chart[CHART_EVENT_MOUSE_MOVE]==0);
  assert(chart[CHART_SHOW_PRICE_SCALE]==1);assert(chart[CHART_COLOR_CHART_UP]==123);
+ // Six coincident types occupy distinct rows, inside the plot and before the axis.
+ vector<PanelLevel> labels;
+ g_pcLow=100;g_pcHigh=200;g_pcTop=10;g_pcBottom=230;
+ for(int kind=0;kind<6;kind++)PanelAddLevel(labels,150,"test",PanelLevelColor(kind),kind);
+ g_pc.Erase(0);PanelLevelLabels(labels);assert(g_pc.text.size()==6);
+ for(int i=0;i<6;i++){
+   assert(contains(PanelLevelCaption(i)));
+   for(int j=0;j<i;j++)assert(PanelLevelColor(i)!=PanelLevelColor(j));
+   auto p=g_pc.positions[i];assert(p.second>=g_pcTop&&p.second+12<=g_pcBottom);
+   assert(p.first+g_pc.TextWidth(g_pc.text[i])<=g_pcRight-12);
+   for(int j=0;j<i;j++)assert(abs(p.second-g_pc.positions[j].second)>=16);
+ }
+ labels.clear();for(int i=0;i<50;i++)PanelAddLevel(labels,150,"test",PanelLevelColor(2),2);
+ g_pc.Erase(0);PanelLevelLabels(labels);assert(g_pc.text.size()==1&&contains("PENDING BUY x50"));
+ // Too many labels in a short plot produce an explicit overflow count, not overlap.
+ labels.clear();g_pcBottom=70;
+ for(int kind=0;kind<6;kind++)PanelAddLevel(labels,150,"test",PanelLevelColor(kind),kind);
+ g_pc.Erase(0);PanelLevelLabels(labels);assert(contains("+4 levels"));
+ for(int i=0;i<int(g_pc.positions.size());i++)for(int j=0;j<i;j++)
+   assert(abs(g_pc.positions[i].second-g_pc.positions[j].second)>=16);
+ labels.clear();PanelAddLevel(labels,250,"outside",PanelLevelColor(0),0);
+ g_pc.Erase(0);PanelLevelLabels(labels);assert(g_pc.text.empty());
+
 }
 '''
         with tempfile.TemporaryDirectory() as tmp:

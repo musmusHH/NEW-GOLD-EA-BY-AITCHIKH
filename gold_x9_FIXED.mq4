@@ -14,7 +14,7 @@
 //+------------------------------------------------------------------+
 #property copyright   "Mr. CapFree"
 #property link        "https://example.com"
-#property version     "6.720"   // Broker-data chart panel + carryover performance
+#property version     "6.730"   // Broker-data chart panel + carryover performance
 #property description "gold X9 Full Focus design 4 + four themes + broker-data chart"
 #property strict
 #include <Canvas\Canvas.mqh>
@@ -346,6 +346,7 @@ uint g_pcLastMs=0, g_pcQuoteSeenMs=0, g_pcLastTableClickMs=0;
 datetime g_pcQuoteTime=0;
 struct PanelLevel
   {
+   int kind; // BUY, SELL, pending buy/sell, TP, SL
    double price;
    string text;
    color ink;
@@ -585,14 +586,80 @@ bool PanelMouseMove(int x,int y,int buttons)
    return true;
   }
 
-void PanelAddLevel(PanelLevel &levels[],double price,string text,color ink)
+void PanelAddLevel(PanelLevel &levels[],double price,string text,color ink,int kind)
   {
    if(price<=0) return;
    int n=ArraySize(levels);
    if(ArrayResize(levels,n+1)!=n+1) return;
+   levels[n].kind=kind;
    levels[n].price=price;
    levels[n].text=text;
    levels[n].ink=ink;
+  }
+
+// Stable type colors, independent of floating P/L. Darker accents on Light.
+color PanelLevelColor(int kind)
+  {
+   if(kind==0) return UiGood();
+   if(kind==1) return UiBad();
+   if(kind==2) return UiAmber();
+   if(kind==3) return g_activeTheme==1?C'126,55,162':C'207,151,239';
+   if(kind==4) return g_activeTheme==1?C'0,105,175':C'102,192,255';
+   return g_activeTheme==1?C'173,73,15':C'255,155,87';
+  }
+
+string PanelLevelCaption(int kind)
+  {
+   if(kind==0) return "BUY";
+   if(kind==1) return "SELL";
+   if(kind==2) return "PENDING BUY";
+   if(kind==3) return "PENDING SELL";
+   if(kind==4) return "TP";
+   return "SL";
+  }
+
+// Bounded 16px text slots in the right plot gutter, never on the price axis.
+// Nearby levels of the same type share a label; full details stay in the tooltip.
+void PanelLevelLabels(PanelLevel &levels[])
+  {
+   int kinds[128],counts[128],anchors[128];
+   ArrayInitialize(kinds,-1);ArrayInitialize(counts,0);ArrayInitialize(anchors,0);
+   int slots=(int)MathMax(0,MathMin(128,(g_pcBottom-g_pcTop-20)/16));
+   int hidden=0;
+   for(int i=0;i<ArraySize(levels);i++)
+     {
+      if(levels[i].price<g_pcLow || levels[i].price>g_pcHigh) continue;
+      int target=PanelPriceY(levels[i].price),match=-1,best=-1,distance=100000;
+      for(int j=0;j<slots;j++)
+        {
+         if(counts[j]>0 && kinds[j]==levels[i].kind && MathAbs(anchors[j]-target)<=8)
+           { match=j;break; }
+         int delta=(int)MathAbs(g_pcTop+8+j*16-target);
+         if(counts[j]==0 && delta<distance) { best=j;distance=delta; }
+        }
+      if(match>=0) { counts[match]++;continue; }
+      if(best<0) { hidden++;continue; }
+      kinds[best]=levels[i].kind;counts[best]=1;anchors[best]=target;
+     }
+   for(int row=0;row<slots;row++)
+     {
+      if(counts[row]==0) continue;
+      string label=PanelLevelCaption(kinds[row]);
+      if(counts[row]>1) label+=" x"+IntegerToString(counts[row]);
+      int y=g_pcTop+2+row*16,x=g_pcRight-12-g_pc.TextWidth(label);
+      color ink=PanelLevelColor(kinds[row]);
+      // A short leader preserves the exact level when text is shifted to a free slot.
+      g_pc.Line(g_pcRight-156,anchors[row],g_pcRight-148,y+6,ColorToARGB(ink));
+      g_pc.FillRectangle(x-2,y-1,g_pcRight-10,y+12,ColorToARGB(UiPanel()));
+      PanelText(x,y,label,ink);
+     }
+   if(hidden>0)
+     {
+      string more="+"+IntegerToString(hidden)+" levels";
+      int x=g_pcRight-12-g_pc.TextWidth(more),y=g_pcBottom-14;
+      g_pc.FillRectangle(x-2,y-1,g_pcRight-10,y+12,ColorToARGB(UiPanel()));
+      PanelText(x,y,more,UiDim());
+     }
   }
 
 string PanelOrderName(int type)
@@ -864,14 +931,13 @@ void PanelDraw(bool force)
       int type=OrderType();
       if(type<OP_BUY || type>OP_SELLSTOP) continue;
       bool market=(type==OP_BUY || type==OP_SELL);
-      double net=OrderProfit()+OrderSwap()-CommissionCost(OrderLots());
       string ticket="#"+IntegerToString(OrderTicket());
       string text=ticket+" "+PanelOrderName(type)+" "+DoubleToString(OrderLots(),2);
       text+=" LIVE "+PanelLiveMoney()+" TRAIL "+PanelTrailMoney();
-      color ink=market ? (net>=0 ? UiGood() : UiBad()) : UiAmber();
-      PanelAddLevel(levels,OrderOpenPrice(),text,ink);
-      PanelAddLevel(levels,OrderStopLoss(),ticket+" SL~ "+PanelExitMoney(OrderStopLoss()),UiBad());
-      PanelAddLevel(levels,OrderTakeProfit(),ticket+" TP~ "+PanelExitMoney(OrderTakeProfit()),UiGood());
+      int kind=market?(type==OP_BUY?0:1):((type==OP_BUYSTOP || type==OP_BUYLIMIT)?2:3);
+      PanelAddLevel(levels,OrderOpenPrice(),text,PanelLevelColor(kind),kind);
+      PanelAddLevel(levels,OrderStopLoss(),ticket+" SL~ "+PanelExitMoney(OrderStopLoss()),PanelLevelColor(5),5);
+      PanelAddLevel(levels,OrderTakeProfit(),ticket+" TP~ "+PanelExitMoney(OrderTakeProfit()),PanelLevelColor(4),4);
      }
    string detail="Amounts in "+AccountCurrency()+"; live P/L uses dashboard commission settings. TP/SL estimate net from entry, including current swap; future costs/slippage may differ.";
    for(int tip=0;tip<ArraySize(levels);tip++)
@@ -921,7 +987,7 @@ void PanelDraw(bool force)
       g_pc.FillRectangle((int)MathMax(12,bx-body/2),top,
                         (int)MathMin(g_pcRight-10,bx+body/2),bottom,ink);
      }
-   // Keep only actual price-level lines; the table provides per-trade text.
+   // Actual price-level lines; compact type labels are laid out separately.
    for(int line=0;line<ArraySize(levels);line++)
      {
       if(levels[line].price<g_pcLow || levels[line].price>g_pcHigh) continue;
@@ -934,6 +1000,7 @@ void PanelDraw(bool force)
       g_pc.FillRectangle(g_pcRight+1,by-7,w-2,by+8,ColorToARGB(UiAccent()));
       PanelText(g_pcRight+4,by-6,DoubleToString(tick.bid,activeSymbolDigits),UiPanel());
      }
+   PanelLevelLabels(levels);
    // Time labels follow visible candles after horizontal dragging; blank gutter stays blank.
    int labelEdge=-1000;
    if(oldestVisible>=0)
@@ -1609,7 +1676,7 @@ int OnInit()
    PanelDraw(true);
    if(PanelEnabled()) EventSetTimer(1);
 
-   Print("gold_x9 v6.72 (MQL4) initialised on ", activeTradeSymbol, " digits=", activeSymbolDigits, " point=", DoubleToString(activeSymbolPoint, activeSymbolDigits), " result boxes=removed", " hud=", (showDashboardPanel ? "on" : "off"));
+   Print("gold_x9 v6.73 (MQL4) initialised on ", activeTradeSymbol, " digits=", activeSymbolDigits, " point=", DoubleToString(activeSymbolPoint, activeSymbolDigits), " result boxes=removed", " hud=", (showDashboardPanel ? "on" : "off"));
    return(INIT_SUCCEEDED);
   }
 
