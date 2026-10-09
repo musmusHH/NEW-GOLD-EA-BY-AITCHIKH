@@ -1,4 +1,4 @@
-# Live broker-data chart panel — v6.650
+# Live broker-data chart panel — v6.660
 
 ## Install
 
@@ -144,3 +144,20 @@ The initial balance anchor stays fixed during the running session so changes in 
 Live account equity, open P/L, daily drawdown and the equity-curve risk breaker are **unchanged**; they continue to use live equity for protection. Repainting on resize/theme changes is allowed but does not change curve data.
 
 Ten automated tests pass, including unchanged floating values, repeated refreshes, unordered history, ignored pending/deposit/unrelated records, zero-net closures, partial closes, incomplete history scans and ring-buffer capacity. Native MetaEditor compilation/demo checks remain necessary.
+
+
+## v6.660 — continuous EMA-style curve and optional DD line
+
+The disconnected rectangle marks have been replaced with a connected, two-pixel-wide canvas curve. Each adjacent pixel is joined, with bounded smooth interpolation between EMA samples (no interpolation overshoot).
+
+New Inputs:
+
+- `eqCurveEmaPeriod = 3`: EMA smoothing over closed-result samples, including the starting anchor. Set **1** for the unsmoothed closed-result values rendered as a continuous curve; allowed effective range 1–100. Smoothing is visual and does not change reported P/L, closed statistics or risk controls.
+- `showEquityDDLine = false`: enable to overlay a red drawdown line.
+- `equityDDLineColor`: choose the DD line color.
+
+Both series still advance **only with closed-result history**. EMA and running-peak DD are computed before ring-buffer truncation, so selecting fewer visible samples does not restart the calculations. DD is calculated from **raw closed-result equity**, not its EMA: `(running peak - closed equity) / running peak × 100`, with zero used when the peak is non-positive. It is not the live daily drawdown guard.
+
+The DD legend explicitly shows a separate percentage scale: 0% at the top and the labelled maximum at the bottom. Hover for the current EMA/DD values and scale explanation. The equity line uses its own monetary range; the two lines are not on a shared unit scale. The risk guard continues to use live equity unchanged.
+
+Renderer tests check contiguous pixel segments, DD enabled/disabled, EMA and DD arithmetic, empty/one-point/flat data, sample limits, cleanup and canvas bounds. Ten automated tests pass. Native MT4 compilation and visual verification are still required.

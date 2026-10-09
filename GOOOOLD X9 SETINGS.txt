@@ -13,14 +13,14 @@
 //|     LIVE / TRADE TRACKER / EQUITY CURVE                          |
 //|   * C2 closed-trade RESULT TAGS drawn directly at trade close    |
 //|     (Simple Result & Points Label: BUY/SELL + Profit + Points)   |
-//|   * EQUITY CURVE drawn as a smooth Catmull-Rom spline on a       |
-//|     resource bitmap ARGB (curvy line, not bars)                |
+//|   * EQUITY CURVE drawn as a continuous closed-result EMA on a       |
+//|     resource bitmap ARGB with optional closed-result DD                |
 //|  All trading logic (fractals, lot sizing, BE/trail/salvage,      |
 //|  M1-M4, DD guard) is unchanged from the proven LAB build.        |
 //+------------------------------------------------------------------+
 #property copyright   "Mr. CapFree"
 #property link        "https://example.com"
-#property version     "6.650"   // Broker-data chart panel + carryover performance
+#property version     "6.660"   // Broker-data chart panel + carryover performance
 #property description "gold x9 MQL4 + LAB M1-M4 + live broker-data chart panel"
 #property strict
 #include <Canvas\Canvas.mqh>
@@ -200,6 +200,9 @@ input string tagFontName           = "Consolas";       // C2: Tag Font
 input color  tagWinColor           = C'34,214,127';    // C2: Winning Tag Colour (green)
 input color  tagLossColor          = C'255,77,90';     // C2: Losing Tag Colour (red)
 input bool   showEquityCurve       = true;             // C2: Smooth Equity Curve In EQUITY Panel
+input int    eqCurveEmaPeriod      = 3;                // Closed-result EMA smoothing (1=raw, max 100)
+input bool   showEquityDDLine      = false;            // Optional CLOSED-result drawdown line (separate % scale)
+input color  equityDDLineColor     = C'235,82,82';      // Drawdown line color
 input int    eqCurveSamples        = 64;               // C2: Equity Samples Kept For The Curve
 //=========================================================================
 
@@ -331,6 +334,8 @@ int           g_tagFail     = 0;
 //=== C2: equity-curve sample ring ===
 #define EQ_MAX 512
 double        g_eqVal[EQ_MAX];
+double        g_eqEMA[EQ_MAX],g_eqDD[EQ_MAX];
+double        g_eqRunningPeak=0.0,g_eqRunningEMA=0.0;
 datetime      g_eqT[EQ_MAX];
 int           g_eqN        = 0;
 
@@ -409,7 +414,6 @@ void   HudMoveAll();
 void   HudTick(bool force);
 void   RefreshStats();
 void   EqPush(double v, datetime t);
-void   EqCellSet(string name, int x, int y, int w, int h, color clr, bool used);
 void   EqDraw();
 
 //=== Broker-data chart panel (display only; never sends/modifies orders) ===
@@ -1629,6 +1633,15 @@ void EqPush(double v, datetime t)
    int idx = g_eqN % EQ_MAX;
    g_eqVal[idx] = v;
    g_eqT[idx]   = t;
+   if(g_eqN==0) { g_eqRunningPeak=v; g_eqRunningEMA=v; }
+   else
+     {
+      double alpha=2.0/(MathMax(1,MathMin(100,eqCurveEmaPeriod))+1.0);
+      g_eqRunningEMA+=alpha*(v-g_eqRunningEMA);
+      g_eqRunningPeak=MathMax(g_eqRunningPeak,v);
+     }
+   g_eqEMA[idx]=g_eqRunningEMA;
+   g_eqDD[idx]=(g_eqRunningPeak>0)?MathMax(0.0,(g_eqRunningPeak-v)/g_eqRunningPeak*100.0):0.0;
    g_eqN++;
   }
 
@@ -1645,91 +1658,90 @@ void EqItem(int k, double &v, datetime &t)
    t = g_eqT[idx];
   }
 
-#define EQ_COL_MAX 72
+CCanvas g_eqCanvas;
+bool g_eqCanvasReady=false;
+int g_eqCanvasX=0,g_eqCanvasY=0;
 
-void EqCellSet(string name, int x, int y, int w, int h, color clr, bool used)
+void EqCanvasDestroy()
   {
-   if(!used) { ObjectDelete(0, name); return; }
-   if(ObjectFind(0, name) < 0)
-     {
-      ObjectCreate(0, name, OBJ_RECTANGLE_LABEL, 0, 0, 0);
-      ObjectSetInteger(0, name, OBJPROP_CORNER,      CORNER_LEFT_UPPER);
-      ObjectSetInteger(0, name, OBJPROP_ANCHOR,      ANCHOR_LEFT_UPPER);
-      ObjectSetInteger(0, name, OBJPROP_BORDER_TYPE, BORDER_FLAT);
-      ObjectSetInteger(0, name, OBJPROP_SELECTABLE,  false);
-      ObjectSetInteger(0, name, OBJPROP_HIDDEN,      true);
-      ObjectSetInteger(0, name, OBJPROP_BACK,        false);
-      ObjectSetInteger(0, name, OBJPROP_ZORDER,      1);
-     }
-   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x);
-   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y);
-   ObjectSetInteger(0, name, OBJPROP_XSIZE,     w);
-   ObjectSetInteger(0, name, OBJPROP_YSIZE,     h);
-   ObjectSetInteger(0, name, OBJPROP_BGCOLOR,   clr);
-   ObjectSetInteger(0, name, OBJPROP_COLOR,     clr);
-   ObjectSetInteger(0, name, OBJPROP_FILL,      true);
+   if(g_eqCanvasReady) g_eqCanvas.Destroy();
+   g_eqCanvasReady=false;
   }
 
 void EqDraw()
   {
-   if(!showEquityCurve || !showDashboardPanel) return;
-   if(g_pw[4] <= 0) return;
-   int ox = g_px[4] + 14;
-   int oy = g_py[4] + 35;
-   int kept = EqCount();
-   int nUse = (kept < eqCurveSamples) ? kept : eqCurveSamples;
-   if(nUse > 96) nUse = 96;
-
-   if(nUse < 2)
+   if(!showEquityCurve || !showDashboardPanel) { EqCanvasDestroy(); return; }
+   if(g_pw[4]<=0) return;
+   int ox=g_px[4]+14,oy=g_py[4]+34;
+   string name=HUD_PREFIX+"eq_curve";
+   if(!g_eqCanvasReady || ObjectFind(0,name)<0 || ox!=g_eqCanvasX || oy!=g_eqCanvasY)
      {
-      for(int d = 0; d < EQ_COL_MAX; d++)
+      EqCanvasDestroy();
+      // Remove the old disconnected rectangle-based curve objects.
+      ObjectsDeleteAll(0,HUD_PREFIX+"eql");
+      ObjectsDeleteAll(0,HUD_PREFIX+"eqf");
+      if(!g_eqCanvas.CreateBitmapLabel(0,0,name,ox,oy,EQ_PLOT_W,96,COLOR_FORMAT_ARGB_NORMALIZE))
+        { g_eqCanvas.Destroy(); return; }
+      g_eqCanvasReady=true;g_eqCanvasX=ox;g_eqCanvasY=oy;
+      ObjectSetInteger(0,name,OBJPROP_BACK,false);
+      ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
+      ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
+      g_eqCanvas.FontSet("Consolas",-80);
+     }
+   g_eqCanvas.Erase(ColorToARGB(UiPanel()));
+   int kept=EqCount();
+   int nUse=(int)MathMin(kept,MathMax(2,MathMin(96,eqCurveSamples)));
+   if(nUse==0)
+     {
+      g_eqCanvas.TextOut(5,35,"Waiting for closed results",ColorToARGB(UiDim()));
+      g_eqCanvas.Update();return;
+     }
+   double smooth[96],dd[96];
+   ArrayInitialize(smooth,0.0);ArrayInitialize(dd,0.0);
+   double low=1e18,high=-1e18,maxDD=0.0;
+   int base=(g_eqN>EQ_MAX)?g_eqN-EQ_MAX:0;
+   for(int i=0;i<nUse;i++)
+     {
+      int idx=(base+kept-nUse+i)%EQ_MAX;
+      smooth[i]=g_eqEMA[idx];dd[i]=g_eqDD[idx];
+      low=MathMin(low,smooth[i]);high=MathMax(high,smooth[i]);
+      maxDD=MathMax(maxDD,dd[i]);
+     }
+   double pad=MathMax(0.01,(high-low)*0.08);
+   low-=pad;high+=pad;
+   double ddScale=MathMax(1.0,MathCeil(maxDD*10.0)/10.0);
+   int period=(int)MathMax(1,MathMin(100,eqCurveEmaPeriod));
+   g_eqCanvas.TextOut(4,0,"EMA("+IntegerToString(period)+")",ColorToARGB(UiCurve()));
+   if(showEquityDDLine)
+      g_eqCanvas.TextOut(100,0,"DD 0-"+DoubleToString(ddScale,1)+"%",ColorToARGB(equityDDLineColor));
+   string tip="Closed results only. Equity EMA("+IntegerToString(period)+
+      "): "+DoubleToString(smooth[nUse-1],2)+" "+AccountCurrency()+
+      ". DD uses unsmoothed closed results from the running peak: "+DoubleToString(dd[nUse-1],2)+"%.";
+   if(showEquityDDLine) tip+=" DD scale: 0% at top, "+DoubleToString(ddScale,1)+"% at bottom (separate from equity scale).";
+   ObjectSetString(0,name,OBJPROP_TOOLTIP,tip);
+   int left=4,right=EQ_PLOT_W-5,top=18,bottom=81;
+   int prevY=0,prevDD=0;
+   for(int x=left;x<=right;x++)
+     {
+      double position=(double)(x-left)*(nUse-1)/(right-left);
+      int segment=(int)MathMin(MathFloor(position),MathMax(0,nUse-2));
+      double u=position-segment;
+      // Smooth, bounded interpolation: no overshoot between EMA samples.
+      double weight=u*u*(3.0-2.0*u);
+      int next=(int)MathMin(segment+1,nUse-1);
+      double value=smooth[segment]+(smooth[next]-smooth[segment])*weight;
+      double drawdown=dd[segment]+(dd[next]-dd[segment])*weight;
+      int y=top+(int)MathRound((high-value)/(high-low)*(bottom-top));
+      int dy=top+(int)MathRound(drawdown/ddScale*(bottom-top));
+      if(x>left)
         {
-         EqCellSet(HUD_PREFIX + "eql" + IntegerToString(d), 0, 0, 0, 0, clrBlack, false);
-         EqCellSet(HUD_PREFIX + "eqf" + IntegerToString(d), 0, 0, 0, 0, clrBlack, false);
+         g_eqCanvas.Line(x-1,prevY,x,y,ColorToARGB(UiCurve()));
+         g_eqCanvas.Line(x-1,prevY+1,x,y+1,ColorToARGB(UiCurve()));
+         if(showEquityDDLine) g_eqCanvas.Line(x-1,prevDD,x,dy,ColorToARGB(equityDDLineColor));
         }
-      return;
+      prevY=y;prevDD=dy;
      }
-
-   double ptsX[96], ptsY[96];
-   ArrayInitialize(ptsX, 0.0); ArrayInitialize(ptsY, 0.0);
-   double mn = 1e18, mx = -1e18;
-   double v; datetime t;
-   int first = kept - nUse;
-   for(int i = 0; i < nUse; i++)
-     {
-      EqItem(first + i, v, t);
-      if(v < mn) mn = v;
-      if(v > mx) mx = v;
-     }
-   if(mx - mn < 1e-9) { mx += 1.0; mn -= 1.0; }
-   for(int i2 = 0; i2 < nUse; i2++)
-     {
-      EqItem(first + i2, v, t);
-      ptsX[i2] = 4.0 + (double)i2 * (EQ_PLOT_W - 8.0) / (double)(nUse - 1);
-      ptsY[i2] = EQ_PLOT_H - 6.0 - (v - mn) / (mx - mn) * (EQ_PLOT_H - 14.0);
-     }
-
-   color lineC = UiCurve();
-   color fillC = C'14,34,24';
-   int   plotBottom = oy + EQ_PLOT_H - 2;
-
-   for(int j = 0; j < EQ_COL_MAX; j++)
-     {
-      double tt = (double)j * (double)(nUse - 1) / (double)(EQ_COL_MAX - 1);
-      int    s  = (int)MathFloor(tt);
-      if(s > nUse - 2) s = nUse - 2;
-      double u  = tt - s, u2 = u * u, u3 = u2 * u;
-      int i0 = (s > 0) ? s - 1 : 0;
-      int i3 = (s + 2 < nUse) ? s + 2 : nUse - 1;
-      double xx = 0.5 * ((2 * ptsX[s]) + (-ptsX[i0] + ptsX[s + 1]) * u + (2 * ptsX[i0] - 5 * ptsX[s] + 4 * ptsX[s + 1] - ptsX[i3]) * u2 + (-ptsX[i0] + 3 * ptsX[s] - 3 * ptsX[s + 1] + ptsX[i3]) * u3);
-      double yy = 0.5 * ((2 * ptsY[s]) + (-ptsY[i0] + ptsY[s + 1]) * u + (2 * ptsY[i0] - 5 * ptsY[s] + 4 * ptsY[s + 1] - ptsY[i3]) * u2 + (-ptsY[i0] + 3 * ptsY[s] - 3 * ptsY[s + 1] + ptsY[i3]) * u3);
-
-      int cx = ox + (int)xx;
-      int cy = oy + (int)yy;
-      string idj = IntegerToString(j);
-      EqCellSet(HUD_PREFIX + "eqf" + idj, 0, 0, 0, 0, fillC, false);
-      EqCellSet(HUD_PREFIX + "eql" + idj, cx - 2, cy - 1, 5, 3, lineC, true);
-     }
+   g_eqCanvas.Update();
   }
 
 // Closed-result curve: cached independently of chart result tags.
@@ -1955,7 +1967,7 @@ int OnInit()
    PanelDraw(true);
    if(PanelEnabled()) EventSetTimer(1);
 
-   Print("gold_x9 v6.65 (MQL4) initialised on ", activeTradeSymbol, " digits=", activeSymbolDigits, " point=", DoubleToString(activeSymbolPoint, activeSymbolDigits), " tags=", (drawResultTags ? "on" : "off"), " hud=", (showDashboardPanel ? "on" : "off"));
+   Print("gold_x9 v6.66 (MQL4) initialised on ", activeTradeSymbol, " digits=", activeSymbolDigits, " point=", DoubleToString(activeSymbolPoint, activeSymbolDigits), " tags=", (drawResultTags ? "on" : "off"), " hud=", (showDashboardPanel ? "on" : "off"));
    return(INIT_SUCCEEDED);
   }
 
@@ -1963,6 +1975,7 @@ void OnDeinit(const int reason)
   {
    EventKillTimer();
    PanelDestroy();
+   EqCanvasDestroy();
    ObjectsDeleteAll(0, HUD_PREFIX);
    if(!tagKeepOnExit) TagDeleteAll();
    else if(drawResultTags) TagRelayout(); // Recreate native tags when keeping them on exit.
@@ -1989,6 +2002,7 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
       if(nt>=0 && nt<=5 && nt!=g_activeTheme)
         {
          g_activeTheme=nt;
+         EqCanvasDestroy();
          ObjectsDeleteAll(0,HUD_PREFIX);
          g_hN=0;
          ApplyChartStyle();
@@ -3066,7 +3080,7 @@ void HudTick(bool force)
       // Rebuild only when matching CLOSED history changes, never from floating equity.
       SeedEquityHistory();
       int kept = EqCount();
-      int nUse = (kept < eqCurveSamples) ? kept : eqCurveSamples;
+      int nUse = (int)MathMin(kept,MathMax(2,MathMin(96,eqCurveSamples)));
       if(nUse > 96) nUse = 96;
       double peak = -1e18, trough = 1e18, maxDD = 0.0, firstV = 0.0, lastV = 0.0, runPeak = -1e18;
       double v; datetime t;
