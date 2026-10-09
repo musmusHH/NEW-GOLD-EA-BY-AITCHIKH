@@ -20,7 +20,7 @@
 //+------------------------------------------------------------------+
 #property copyright   "Mr. CapFree"
 #property link        "https://example.com"
-#property version     "6.640"   // Broker-data chart panel + carryover performance
+#property version     "6.650"   // Broker-data chart panel + carryover performance
 #property description "gold x9 MQL4 + LAB M1-M4 + live broker-data chart panel"
 #property strict
 #include <Canvas\Canvas.mqh>
@@ -1732,19 +1732,71 @@ void EqDraw()
      }
   }
 
+// Closed-result curve: cached independently of chart result tags.
+struct ClosedEquityDeal
+  {
+   int ticket;
+   datetime closed;
+   double net;
+  };
+ClosedEquityDeal g_eqHistory[];
+bool g_eqHistoryReady=false;
+double g_eqClosedBase=0.0;
+datetime g_eqBaseTime=0;
+
 void SeedEquityHistory()
   {
-   g_eqN = 0;
-   double start = AccountBalance() - g_totalClosedPL;
-   EqPush(start, TimeCurrent());
-   int total = OrdersHistoryTotal();
-   double cum = start;
-   for(int i = 0; i < total; i++)
+   int total=OrdersHistoryTotal();
+   ClosedEquityDeal deals[];
+   if(ArrayResize(deals,total)!=total) return;
+   int count=0;
+   double closedNet=0.0;
+   for(int i=0;i<total;i++)
      {
-      if(!OrderSelect(i, SELECT_BY_POS, MODE_HISTORY)) continue;
-      if(!IsMatchingOrder()) continue;
-      cum += OrderProfit() + OrderSwap() - CommissionCost(OrderLots());
-      EqPush(cum, OrderCloseTime());
+      if(!OrderSelect(i,SELECT_BY_POS,MODE_HISTORY)) return; // Retry an incomplete snapshot.
+      if(!IsMatchingOrder() || OrderCloseTime()<=0) continue;
+      deals[count].ticket=OrderTicket();
+      deals[count].closed=OrderCloseTime();
+      deals[count].net=OrderProfit()+OrderSwap()-CommissionCost(OrderLots());
+      closedNet+=deals[count].net;
+      count++;
+     }
+   ArrayResize(deals,count);
+   bool changed=(!g_eqHistoryReady || count!=ArraySize(g_eqHistory));
+   if(!changed)
+      for(int c=0;c<count;c++)
+         if(deals[c].ticket!=g_eqHistory[c].ticket || deals[c].closed!=g_eqHistory[c].closed ||
+            deals[c].net!=g_eqHistory[c].net) { changed=true; break; }
+   if(!changed) return; // Floating equity, ticks and deposits alone cannot add samples.
+   if(ArrayResize(g_eqHistory,count)!=count) return;
+   for(int j=0;j<count;j++) g_eqHistory[j]=deals[j];
+   if(!g_eqHistoryReady)
+     {
+      g_eqClosedBase=AccountBalance()-closedNet;
+      g_eqBaseTime=TimeCurrent();
+      g_eqHistoryReady=true;
+     }
+   // Terminal history is not guaranteed to be ordered. Sort only on a changed snapshot.
+   for(int a=1;a<count;a++)
+     {
+      ClosedEquityDeal item=deals[a];
+      int b=a-1;
+      while(b>=0)
+        {
+         if(deals[b].closed<item.closed ||
+            (deals[b].closed==item.closed && deals[b].ticket<=item.ticket)) break;
+         deals[b+1]=deals[b]; b--;
+        }
+      deals[b+1]=item;
+     }
+   if(count>0 && g_eqBaseTime>=deals[0].closed) g_eqBaseTime=deals[0].closed-1;
+   g_eqN=0;
+   double cumulative=g_eqClosedBase;
+   EqPush(cumulative,g_eqBaseTime);
+   for(int d=0;d<count;d++)
+     {
+      cumulative+=deals[d].net;
+      EqPush(cumulative,deals[d].closed);
      }
   }
 
@@ -1885,6 +1937,8 @@ int OnInit()
       HudLayout();
      }
 
+   if(showEquityCurve) SeedEquityHistory();
+
    g_lastTagMs = 0;
    g_tagMade   = 0;
    g_tagFail   = 0;
@@ -1892,7 +1946,6 @@ int OnInit()
      {
       if(!tagKeepOnExit) TagDeleteAll();
       ChartSetInteger(0, CHART_SHOW_OBJECT_DESCR, true);
-      SeedEquityHistory();
       TagInitHistory();
       TagRelayout();
      }
@@ -1902,7 +1955,7 @@ int OnInit()
    PanelDraw(true);
    if(PanelEnabled()) EventSetTimer(1);
 
-   Print("gold_x9 v6.64 (MQL4) initialised on ", activeTradeSymbol, " digits=", activeSymbolDigits, " point=", DoubleToString(activeSymbolPoint, activeSymbolDigits), " tags=", (drawResultTags ? "on" : "off"), " hud=", (showDashboardPanel ? "on" : "off"));
+   Print("gold_x9 v6.65 (MQL4) initialised on ", activeTradeSymbol, " digits=", activeSymbolDigits, " point=", DoubleToString(activeSymbolPoint, activeSymbolDigits), " tags=", (drawResultTags ? "on" : "off"), " hud=", (showDashboardPanel ? "on" : "off"));
    return(INIT_SUCCEEDED);
   }
 
@@ -2380,7 +2433,6 @@ void ApplyChartStyle()
    ChartRedraw(chartId);
   }
 
-uint g_lastEqLiveMs = 0;
 
 #define ACC_W 280
 #define ACC_H 360
@@ -3011,11 +3063,8 @@ void HudTick(bool force)
 
    if(showEquityCurve)
      {
-      if(ms - g_lastEqLiveMs > 60000)
-        {
-         g_lastEqLiveMs = ms;
-         EqPush(equity, TimeCurrent());
-        }
+      // Rebuild only when matching CLOSED history changes, never from floating equity.
+      SeedEquityHistory();
       int kept = EqCount();
       int nUse = (kept < eqCurveSamples) ? kept : eqCurveSamples;
       if(nUse > 96) nUse = 96;
@@ -3035,9 +3084,9 @@ void HudTick(bool force)
             if(d > maxDD) maxDD = d;
            }
         }
-      if(kept == 0) { peak = equity; trough = equity; }
+      if(kept == 0) { peak = g_eqClosedBase; trough = g_eqClosedBase; }
       double netRet = (firstV > 0.0) ? (lastV - firstV) / firstV * 100.0 : 0.0;
-      HudSetText(HUD_PREFIX + "eq_n", IntegerToString(nUse) + " | TRACKED", UiDim());
+      HudSetText(HUD_PREFIX + "eq_n", IntegerToString(nUse) + " | CLOSED RESULTS", UiDim());
       HudSetText(HUD_PREFIX + "eq_V0", DoubleToString(peak, 2), UiInk());
       HudSetText(HUD_PREFIX + "eq_V1", DoubleToString(trough, 2), UiInk());
       HudSetText(HUD_PREFIX + "eq_V2", DoubleToString(maxDD, 1) + "%", (maxDD > 0.0) ? UiBad() : UiGood());

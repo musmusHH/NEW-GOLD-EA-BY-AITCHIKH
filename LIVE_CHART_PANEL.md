@@ -1,4 +1,4 @@
-# Live broker-data chart panel — v6.640
+# Live broker-data chart panel — v6.650
 
 ## Install
 
@@ -131,3 +131,16 @@ Confirmation is recorded only in the successful OrderModify branch when the trai
 Tracking is session-local: after EA reload/restart, an existing SL is not guessed to be trailing. The column will show `-` until the next confirmed trailing change. Closed-ticket records are removed as the table refreshes. The amount updates with the position's current lot size and accrued swap.
 
 Eight automated tests pass, including BUY/SELL money signs, stop changes/removal, pending exclusion, missing tick data, closed-ticket cleanup and success-branch wiring. Full MetaEditor compilation and demo validation are still required. Check that a real successful trailing update changes the displayed column on the next display refresh.
+
+
+## v6.650 — closed-trade-only equity curve
+
+The curve no longer takes periodic live AccountEquity samples. It is a cumulative closed-result curve: one starting balance anchor plus one point per matching closed BUY/SELL history record, ordered by close time and ticket. Net results retain the existing profit + swap − dashboard commission estimate convention.
+
+Open positions, floating P/L, ticks and deposit/withdrawal records do not add points. Breakeven closures still add a point; partial closes count when MT4 exposes them as closed history records. Repeated refreshes of unchanged history do not append duplicates. New matching closures update the curve on the next dashboard refresh. History loading/filter changes or broker corrections to closed results rebuild the curve from the available matching history.
+
+The initial balance anchor stays fixed during the running session so changes in live balance alone cannot move old points. On restart it is seeded again from the loaded history and current balance. MT4 Account History → All History controls which historical records are available. This display works even when `drawResultTags` is disabled.
+
+Live account equity, open P/L, daily drawdown and the equity-curve risk breaker are **unchanged**; they continue to use live equity for protection. Repainting on resize/theme changes is allowed but does not change curve data.
+
+Ten automated tests pass, including unchanged floating values, repeated refreshes, unordered history, ignored pending/deposit/unrelated records, zero-net closures, partial closes, incomplete history scans and ring-buffer capacity. Native MetaEditor compilation/demo checks remain necessary.
