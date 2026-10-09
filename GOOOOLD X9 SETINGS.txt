@@ -279,6 +279,8 @@ double        activeTickValue       = 0.0;
 int           statTrades[10];
 double        statClosed[10];
 double        statPerTrade[10];
+int           statOpenTrades[10];
+double        statOpenPL[10];
 double        g_totalClosedPL    = 0.0;
 double        g_openPL           = 0.0;
 int           g_dayKey           = 0;
@@ -2056,7 +2058,7 @@ void RefreshStats()
      }
    if(!first&&!sign)g_streak=-g_streak;
 
-   int keys[128]; ArrayInitialize(keys,0); int nk=0;
+   int keys[]; ArrayResize(keys,total); ArrayInitialize(keys,0); int nk=0;
    for(int q=0;q<total;q++)
      {
       if(!OrderSelect(q,SELECT_BY_POS,MODE_HISTORY))continue;
@@ -2065,7 +2067,7 @@ void RefreshStats()
       int key=ds.year*10000+ds.mon*100+ds.day;
       bool seen=false;
       for(int u=0;u<nk;u++)if(keys[u]==key){seen=true;break;}
-      if(!seen&&nk<128)keys[nk++]=key;
+      if(!seen)keys[nk++]=key;
      }
    for(int a=1;a<nk;a++){int kv=keys[a],b=a-1;while(b>=0&&keys[b]<kv){keys[b+1]=keys[b];b--;}keys[b+1]=kv;}
    g_tN=(nk<5)?nk:5;
@@ -2203,15 +2205,26 @@ void HudTick(bool force)
 
    if(applyChartStyle) ApplyChartStyle();
 
+   // Reporting uses the same filter for live and closed trades. Do not use
+   // SelectOwnPosition here: that strict selector is for trade management.
    g_openPL = 0.0;
+   int openCount = 0;
+   ArrayInitialize(statOpenTrades, 0);
+   ArrayInitialize(statOpenPL, 0.0);
    double openLots = 0.0, openPips = 0.0, openProfit = 0.0, openComm = 0.0, openSwap = 0.0;
    for(int i = OrdersTotal() - 1; i >= 0; i--)
      {
-      if(!SelectOwnPosition(i)) continue;
-      if(!OrderSelect(selTicket, SELECT_BY_TICKET, MODE_TRADES)) continue;
+      if(!OrderSelect(i, SELECT_BY_POS, MODE_TRADES)) continue;
+      if(!IsMatchingOrder() || OrderCloseTime() != 0) continue;
+      // Triggered stops are now OP_BUY/OP_SELL, regardless of placement day.
+      int sid = ParseSid(OrderComment());
+      openCount++;
+      statOpenTrades[sid]++;
       double pr = OrderProfit();
       double uiComm=CommissionCost(OrderLots());
-      g_openPL   += pr + OrderSwap() - uiComm;
+      double liveNet = pr + OrderSwap() - uiComm;
+      g_openPL   += liveNet;
+      statOpenPL[sid] += liveNet;
       openProfit += pr;
       openComm   += uiComm;
       openSwap   += OrderSwap();
@@ -2298,10 +2311,15 @@ void HudTick(bool force)
    for(int sx=1;sx<=9;sx++)
      {
       string sn=IntegerToString(sx);
-      string sv=(sx==9)?(IntegerToString(statTrades[sx])+" / "+DoubleToString(winRate,1)+"% / "+(statClosed[sx]>=0.0?"+":"")+DoubleToString(statClosed[sx],2)):"- / - / -";
-      HudSetText(HUD_PREFIX+"str_S"+sn+"_3",sv,(sx==9)?((statClosed[sx]>=0.0)?UiGood():UiBad()):UiInk());
+      double strategyPL = statClosed[sx] + statOpenPL[sx];
+      string sv=(sx==9)?(IntegerToString(statTrades[sx]+statOpenTrades[sx])+" / "+DoubleToString(winRate,1)+"% / "+(strategyPL>=0.0?"+":"")+DoubleToString(strategyPL,2)):"- / - / -";
+      HudSetText(HUD_PREFIX+"str_S"+sn+"_3",sv,(sx==9)?((strategyPL>=0.0)?UiGood():UiBad()):UiInk());
+      ObjectSetString(0,HUD_PREFIX+"str_S"+sn+"_3",OBJPROP_TOOLTIP,
+         "Trades: closed + open | Win rate: closed only | P/L: realized + floating");
      }
-   HudSetText(HUD_PREFIX+"str_T3",IntegerToString(nTrades)+" / "+DoubleToString(winRate,1)+"% / "+(g_totalClosedPL>=0.0?"+":"")+DoubleToString(g_totalClosedPL,2),(g_totalClosedPL>=0.0)?UiGood():UiBad());
+   HudSetText(HUD_PREFIX+"str_T3",IntegerToString(nTrades+openCount)+" / "+DoubleToString(winRate,1)+"% / "+(totalPL>=0.0?"+":"")+DoubleToString(totalPL,2),(totalPL>=0.0)?UiGood():UiBad());
+   ObjectSetString(0,HUD_PREFIX+"str_T3",OBJPROP_TOOLTIP,
+      "Trades: closed + open | Win rate: closed only | P/L: realized + floating");
 
    if(showSpreadTag)
      {
@@ -2324,16 +2342,31 @@ void HudTick(bool force)
    for(int r=0;r<5;r++)
      {
       n=IntegerToString(r);
-      if(r<g_tN)
+      // Reserve one row for ALL matching live positions, including carryovers.
+      // Realized daily rows remain grouped by close date, never entry date.
+      int historyRow = r - ((openCount > 0) ? 1 : 0);
+      if(openCount > 0 && r == 0)
         {
-         color nc=(g_tNet[r]>=0.0)?UiGood():UiBad();
-         HudSetText(HUD_PREFIX+"trk_R"+n+"_0",TimeToString(g_tD[r],TIME_DATE),UiInk());
-         HudSetText(HUD_PREFIX+"trk_R"+n+"_1",IntegerToString(g_tSide[r]),UiInk());
-         HudSetText(HUD_PREFIX+"trk_R"+n+"_2",DoubleToString(g_tLot[r],2),UiInk());
-         HudSetText(HUD_PREFIX+"trk_R"+n+"_3",(g_tGain[r]>=0.0?"+":"")+DoubleToString(g_tGain[r],2)+"%",nc);
-         HudSetText(HUD_PREFIX+"trk_R"+n+"_4",DoubleToString(g_tComm[r],2),UiAmber());
-         HudSetText(HUD_PREFIX+"trk_R"+n+"_5",(g_tProf[r]>=0.0?"+":"")+DoubleToString(g_tProf[r],2),(g_tProf[r]>=0.0)?UiGood():UiBad());
-         HudSetText(HUD_PREFIX+"trk_R"+n+"_6",(g_tNet[r]>=0.0?"+":"")+DoubleToString(g_tNet[r],2),nc);
+         color liveColor = (g_openPL >= 0.0) ? UiGood() : UiBad();
+         double liveGain = g_openPL / MathMax(1.0, balance) * 100.0;
+         HudSetText(HUD_PREFIX+"trk_R"+n+"_0","OPEN (LIVE)",UiAmber());
+         HudSetText(HUD_PREFIX+"trk_R"+n+"_1",IntegerToString(openCount),UiInk());
+         HudSetText(HUD_PREFIX+"trk_R"+n+"_2",DoubleToString(openLots,2),UiInk());
+         HudSetText(HUD_PREFIX+"trk_R"+n+"_3",DoubleToString(liveGain,2)+"%",liveColor);
+         HudSetText(HUD_PREFIX+"trk_R"+n+"_4",DoubleToString(openComm,2),UiAmber());
+         HudSetText(HUD_PREFIX+"trk_R"+n+"_5",DoubleToString(openProfit+openSwap,2),liveColor);
+         HudSetText(HUD_PREFIX+"trk_R"+n+"_6",DoubleToString(g_openPL,2),liveColor);
+        }
+      else if(historyRow<g_tN)
+        {
+         color nc=(g_tNet[historyRow]>=0.0)?UiGood():UiBad();
+         HudSetText(HUD_PREFIX+"trk_R"+n+"_0",TimeToString(g_tD[historyRow],TIME_DATE),UiInk());
+         HudSetText(HUD_PREFIX+"trk_R"+n+"_1",IntegerToString(g_tSide[historyRow]),UiInk());
+         HudSetText(HUD_PREFIX+"trk_R"+n+"_2",DoubleToString(g_tLot[historyRow],2),UiInk());
+         HudSetText(HUD_PREFIX+"trk_R"+n+"_3",(g_tGain[historyRow]>=0.0?"+":"")+DoubleToString(g_tGain[historyRow],2)+"%",nc);
+         HudSetText(HUD_PREFIX+"trk_R"+n+"_4",DoubleToString(g_tComm[historyRow],2),UiAmber());
+         HudSetText(HUD_PREFIX+"trk_R"+n+"_5",(g_tProf[historyRow]>=0.0?"+":"")+DoubleToString(g_tProf[historyRow],2),(g_tProf[historyRow]>=0.0)?UiGood():UiBad());
+         HudSetText(HUD_PREFIX+"trk_R"+n+"_6",(g_tNet[historyRow]>=0.0?"+":"")+DoubleToString(g_tNet[historyRow],2),nc);
         }
       else
         {
