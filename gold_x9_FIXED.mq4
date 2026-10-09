@@ -14,7 +14,7 @@
 //+------------------------------------------------------------------+
 #property copyright   "Mr. CapFree"
 #property link        "https://example.com"
-#property version     "6.700"   // Broker-data chart panel + carryover performance
+#property version     "6.710"   // Broker-data chart panel + carryover performance
 #property description "gold X9 Full Focus design 4 + four themes + broker-data chart"
 #property strict
 #include <Canvas\Canvas.mqh>
@@ -91,6 +91,7 @@ input color  bullWickColor         = C'176,137,30';    // Bull Candle Wick
 input color  bearBodyColor         = C'219,181,65';     // Bear Candle Body
 input color  bearWickColor         = C'176,137,30';     // Bear Candle Wick
 input int    chartTradeRows       = 4;                // Trade table rows (1-40; limited by available chart height)
+input double chartRightSpacePct   = 20.0;             // Blank space after latest candle (8-45 percent)
 input int    chartStartBars       = 64;               // Custom chart starting candles (16-240)
 input int    chartStartOffset     = 0;                // Starting bar offset (0 = live)
 input bool   chartStartFitOrders  = false;            // false = BARS (default), true = ALL levels
@@ -349,6 +350,9 @@ void   TagRelayout();
 void   FocusGeometry(int width,int height);
 void   HudCycleTheme();
 void   EqCanvasDestroy();
+void   PanelDraw(bool force);
+double PanelRightGap();
+double PanelBarSpacing(int count);
 void   HudCreate();
 void   HudLayout();
 void   HudMoveAll();
@@ -364,12 +368,18 @@ void   EqDraw();
 CCanvas g_pc;
 bool g_pcReady=false, g_pcSaved=false;
 long g_pcOldLevels=0, g_pcOldForeground=0;
+long g_pcOldMouseMove=0,g_pcOldMouseScroll=1;
+bool g_pcMoveMode=false,g_pcDragging=false,g_pcManualY=false;
+int g_pcDragX=0,g_pcDragY=0,g_pcRenderedBars=0;
+double g_pcPanX=0.0,g_pcViewCenter=0.0,g_pcViewSpan=1.0;
+double g_pcAutoLow=0.0,g_pcAutoHigh=1.0,g_pcLastVisiblePrice=0.0;
+uint g_pcLastDragMs=0;
 int g_pcX=0, g_pcY=0, g_pcW=0, g_pcH=0;
 int g_pcBars=64, g_pcOffset=0, g_pcTradePage=0;
 bool g_pcFitOrders=false;
 datetime g_pcLatest=0;
 double g_pcLow=0, g_pcHigh=1;
-int g_pcTop=42, g_pcBottom=0, g_pcRight=0;
+int g_pcTop=10, g_pcBottom=0, g_pcRight=0;
 uint g_pcLastMs=0, g_pcQuoteSeenMs=0, g_pcLastTableClickMs=0;
 datetime g_pcQuoteTime=0;
 struct PanelLevel
@@ -464,11 +474,14 @@ void PanelRestore()
    if(!g_pcSaved) return;
    ChartSetInteger(0,CHART_SHOW_TRADE_LEVELS,g_pcOldLevels);
    ChartSetInteger(0,CHART_FOREGROUND,g_pcOldForeground);
+   ChartSetInteger(0,CHART_EVENT_MOUSE_MOVE,g_pcOldMouseMove);
+   ChartSetInteger(0,CHART_MOUSE_SCROLL,g_pcOldMouseScroll);
    g_pcSaved=false;
   }
 
 void PanelDestroy()
   {
+   g_pcDragging=false;
    if(g_pcReady) g_pc.Destroy();
    g_pcReady=false;
    ObjectsDeleteAll(0,PC_BUTTON);
@@ -484,7 +497,7 @@ int PanelPriceY(double price)
 
 int PanelBarX(int index,int count)
   {
-   return 12+(int)MathRound((count-1-index+0.5)*(g_pcRight-20)/(double)count);
+   return 12+(int)MathRound((count-1-index+0.5)*PanelBarSpacing(count)+g_pcPanX*(g_pcRight-20));
   }
 
 void PanelText(int x,int y,string text,color ink)
@@ -516,6 +529,98 @@ void PanelButton(string key,string caption,int x,int y,int width)
    ObjectSetInteger(0,name,OBJPROP_ZORDER,50);
    ObjectSetInteger(0,name,OBJPROP_STATE,false);
    ObjectSetString(0,name,OBJPROP_TEXT,caption);
+  }
+
+// Camera controls only: no broker order/stop/target operations.
+double PanelRightGap()
+  {
+   return MathMax(8.0,MathMin(45.0,chartRightSpacePct))/100.0;
+  }
+
+double PanelBarSpacing(int count)
+  {
+   if(count<=0) return 1.0;
+   return (g_pcRight-20)*(1.0-PanelRightGap())/(double)count;
+  }
+
+void PanelToolbar()
+  {
+   bool compact=(g_chartW<1180);
+   int x=g_px[2]+(compact?140:300),y=g_py[2]+(compact?38:7);
+   string keys[10],captions[10],tips[10];
+   int widths[10];ArrayInitialize(widths,24);
+   keys[0]="in";captions[0]="+";tips[0]="Larger candles: fewer visible bars";
+   keys[1]="out";captions[1]="-";tips[1]="Smaller candles: more visible bars";
+   keys[2]="older";captions[2]="<";tips[2]="Older candle history";
+   keys[3]="newer";captions[3]=">";tips[3]="Newer candle history";
+   keys[4]="live";captions[4]="LIVE";widths[4]=40;tips[4]="Latest bars, automatic price scale and default right space";
+   keys[5]="range";captions[5]=g_pcFitOrders?"ALL":"BARS";widths[5]=42;tips[5]="Reset auto scale: all order levels / candles only";
+   keys[6]="move";captions[6]="MOVE";widths[6]=48;tips[6]="Toggle free pan: drag inside the candle plot horizontally or vertically";
+   keys[7]="center";captions[7]="CENTER";widths[7]=58;tips[7]="Center the newest visible candle in the plot";
+   keys[8]="vplus";captions[8]="Y+";widths[8]=28;tips[8]="Expand candles vertically (smaller price range)";
+   keys[9]="vminus";captions[9]="Y-";widths[9]=28;tips[9]="Compress candles vertically (larger price range)";
+   for(int i=0;i<10;i++)
+     {
+      PanelButton(keys[i],captions[i],x,y,widths[i]);
+      ObjectSetString(0,PC_BUTTON+keys[i],OBJPROP_TOOLTIP,tips[i]);
+      if(keys[i]=="move" && g_pcMoveMode)
+        {
+         ObjectSetInteger(0,PC_BUTTON+keys[i],OBJPROP_BGCOLOR,UiAccent());
+         ObjectSetInteger(0,PC_BUTTON+keys[i],OBJPROP_COLOR,UiPanel());
+        }
+      x+=widths[i]+3;
+     }
+  }
+
+void PanelVerticalZoom(double factor)
+  {
+   if(g_pcRenderedBars<2 || g_pcHigh<=g_pcLow) return;
+   double automatic=MathMax(activeSymbolPoint*10,g_pcAutoHigh-g_pcAutoLow);
+   g_pcViewCenter=(g_pcHigh+g_pcLow)*0.5;
+   g_pcViewSpan=MathMax(automatic*0.15,MathMin(automatic*8.0,(g_pcHigh-g_pcLow)*factor));
+   g_pcManualY=true;
+  }
+
+void PanelCenterView()
+  {
+   if(g_pcRenderedBars<2 || g_pcRight<=20) return;
+   g_pcPanX=0.0;
+   double midpoint=12+(g_pcRight-20)*0.5;
+   g_pcPanX=(midpoint-PanelBarX(0,g_pcRenderedBars))/(g_pcRight-20);
+   g_pcViewCenter=g_pcLastVisiblePrice;
+   g_pcViewSpan=MathMax(activeSymbolPoint*10,g_pcHigh-g_pcLow);
+   g_pcManualY=true;
+  }
+
+bool PanelMouseMove(int x,int y,int buttons)
+  {
+   if(!g_pcReady || !g_pcMoveMode) { g_pcDragging=false; return false; }
+   bool down=((buttons & 1)!=0);
+   if(!down)
+     {
+      bool wasDragging=g_pcDragging;g_pcDragging=false;
+      if(wasDragging) PanelDraw(true);
+      return wasDragging;
+     }
+   int left=g_pcX+12,right=g_pcX+g_pcRight-10;
+   int top=g_pcY+g_pcTop,bottom=g_pcY+g_pcBottom;
+   if(!g_pcDragging)
+     {
+      if(x<left || x>right || y<top || y>bottom || g_pcRenderedBars<2) return false;
+      g_pcDragging=true;g_pcDragX=x;g_pcDragY=y;
+      g_pcViewCenter=(g_pcLow+g_pcHigh)*0.5;
+      g_pcViewSpan=g_pcHigh-g_pcLow;g_pcManualY=true;
+      return true;
+     }
+   int nx=(int)MathMax(left,MathMin(right,x)),ny=(int)MathMax(top,MathMin(bottom,y));
+   g_pcPanX+=(double)(nx-g_pcDragX)/MathMax(1,g_pcRight-20);
+   // Retain a small gutter even at the rightmost pan position.
+   g_pcPanX=MathMax(PanelRightGap()-0.95,MathMin(PanelRightGap()-0.03,g_pcPanX));
+   g_pcViewCenter+=(double)(ny-g_pcDragY)*g_pcViewSpan/MathMax(1,bottom-top);
+   if(nx!=g_pcDragX || ny!=g_pcDragY) g_pcLastDragMs=GetTickCount();
+   g_pcDragX=nx;g_pcDragY=ny;
+   if(GetTickCount()-g_pcLastMs>=30) PanelDraw(true);
+   return true;
   }
 
 void PanelAddLevel(PanelLevel &levels[],double price,string text,color ink)
@@ -753,24 +858,21 @@ void PanelDraw(bool force)
         {
          g_pcOldLevels=ChartGetInteger(0,CHART_SHOW_TRADE_LEVELS);
          g_pcOldForeground=ChartGetInteger(0,CHART_FOREGROUND);
+         g_pcOldMouseMove=ChartGetInteger(0,CHART_EVENT_MOUSE_MOVE);
+         g_pcOldMouseScroll=ChartGetInteger(0,CHART_MOUSE_SCROLL);
          g_pcSaved=true;
         }
       ChartSetInteger(0,CHART_SHOW_TRADE_LEVELS,false);
       ChartSetInteger(0,CHART_FOREGROUND,false);
+      ChartSetInteger(0,CHART_EVENT_MOUSE_MOVE,true);
+      ChartSetInteger(0,CHART_MOUSE_SCROLL,g_pcMoveMode?false:g_pcOldMouseScroll);
       // Replace native result objects, keeping their history state intact.
       ObjectsDeleteAll(0,TAG_PREFIX);
      }
    PanelHideNative();
    g_pc.Erase(ColorToARGB(UiPanel()));
    g_pcRight=w-83; g_pcBottom=h-52;
-   PanelText(10,9,activeTradeSymbol+" M"+IntegerToString(Period()),UiAccent());
-   PanelButton("in","+",x+w-240,y+5,24);
-   PanelButton("out","-",x+w-214,y+5,24);
-   PanelButton("older","<",x+w-188,y+5,24);
-   PanelButton("newer",">",x+w-162,y+5,24);
-   PanelButton("live","LIVE",x+w-136,y+5,40);
-   PanelButton("range",g_pcFitOrders?"ALL":"BARS",x+w-94,y+5,40);
-
+   PanelToolbar();
 
    PanelTradeTable();
 
@@ -788,9 +890,11 @@ void PanelDraw(bool force)
    int count=CopyRates(activeTradeSymbol,(ENUM_TIMEFRAMES)Period(),g_pcOffset,g_pcBars,rates);
    if(count<2)
      {
+      g_pcRenderedBars=0;
       PanelText(15,65,"Waiting for broker candle history...",UiDim());
       g_pc.Update();EqDraw(); return;
      }
+   g_pcRenderedBars=count;g_pcLastVisiblePrice=rates[0].close;
    // Use actual broker OHLC, including the forming candle. Never invent candles.
    g_pcLow=rates[0].low; g_pcHigh=rates[0].high;
    for(int i=1;i<count;i++)
@@ -827,22 +931,38 @@ void PanelDraw(bool force)
         { g_pcLow=MathMin(g_pcLow,levels[l].price); g_pcHigh=MathMax(g_pcHigh,levels[l].price); }
    double pad=MathMax((g_pcHigh-g_pcLow)*0.08,activeSymbolPoint*10);
    g_pcLow-=pad; g_pcHigh+=pad;
+   g_pcAutoLow=g_pcLow;g_pcAutoHigh=g_pcHigh;
+   if(g_pcManualY)
+     {
+      g_pcLow=g_pcViewCenter-g_pcViewSpan*0.5;
+      g_pcHigh=g_pcViewCenter+g_pcViewSpan*0.5;
+     }
    for(int grid=0;grid<=4;grid++)
      {
       double price=g_pcLow+(g_pcHigh-g_pcLow)*grid/4.0;
       int gy=PanelPriceY(price);
       g_pc.Line(10,gy,g_pcRight,gy,ColorToARGB(UiBorder()));
+      if(quoted && tick.bid>=g_pcLow && tick.bid<=g_pcHigh && MathAbs(gy-PanelPriceY(tick.bid))<16) continue;
       PanelText(g_pcRight+5,gy-6,DoubleToString(price,activeSymbolDigits),UiDim());
      }
-   int body=(int)MathMax(1,MathMin(9,(g_pcRight-20)/count-2));
+   int body=(int)MathMax(1,MathMin(18,PanelBarSpacing(count)*0.7));
+   int oldestVisible=-1,newestVisible=-1;
    for(int bar=count-1;bar>=0;bar--)
      {
       int bx=PanelBarX(bar,count);
+      if(bx<12 || bx>g_pcRight-10) continue;
+      if(oldestVisible<0) oldestVisible=bar;
+      newestVisible=bar;
+      if(rates[bar].high<g_pcLow || rates[bar].low>g_pcHigh) continue;
       uint ink=ColorToARGB(rates[bar].close>=rates[bar].open ? UiBull() : UiBear());
       g_pc.Line(bx,PanelPriceY(rates[bar].high),bx,PanelPriceY(rates[bar].low),ink);
-      int top=PanelPriceY(MathMax(rates[bar].open,rates[bar].close));
-      int bottom=(int)MathMin(g_pcBottom,MathMax(top+1,PanelPriceY(MathMin(rates[bar].open,rates[bar].close))));
-      g_pc.FillRectangle(bx-body/2,top,bx+body/2,bottom,ink);
+      double bodyHigh=MathMax(rates[bar].open,rates[bar].close);
+      double bodyLow=MathMin(rates[bar].open,rates[bar].close);
+      if(bodyHigh<g_pcLow || bodyLow>g_pcHigh) continue;
+      int top=PanelPriceY(bodyHigh);
+      int bottom=(int)MathMin(g_pcBottom,MathMax(top+1,PanelPriceY(bodyLow)));
+      g_pc.FillRectangle((int)MathMax(12,bx-body/2),top,
+                        (int)MathMin(g_pcRight-10,bx+body/2),bottom,ink);
      }
    // Keep only actual price-level lines; the table provides per-trade text.
    for(int line=0;line<ArraySize(levels);line++)
@@ -863,6 +983,7 @@ void PanelDraw(bool force)
          if(shift<0 || shift>=count) continue;
          if(g_tagPrice[slot]<g_pcLow || g_tagPrice[slot]>g_pcHigh) continue;
          int mx=PanelBarX(shift,count), my=PanelPriceY(g_tagPrice[slot]);
+         if(mx<12 || mx>g_pcRight-10) continue;
          if(my<g_pcTop+12 || my>g_pcBottom-18) continue;
          bool collision=false;
          for(int c=0;c<marked;c++)
@@ -870,7 +991,7 @@ void PanelDraw(bool force)
          if(collision) continue;
          string result=(g_tagProfit[slot]>=0?"+":"")+DoubleToString(g_tagProfit[slot],2);
          int rw=g_pc.TextWidth(result)+8;
-         int rx=(int)MathMin(mx,g_pcRight-rw);
+         int rx=(int)MathMax(12,MathMin(mx,g_pcRight-rw));
          g_pc.FillRectangle(rx,my,rx+rw,my+14,ColorToARGB(UiBand()));
          PanelText(rx+4,my,result,g_tagProfit[slot]>=0?UiGood():UiBad());
          lastX[marked]=mx; lastY[marked]=my; marked++;
@@ -882,8 +1003,18 @@ void PanelDraw(bool force)
       g_pc.FillRectangle(g_pcRight+1,by-7,w-2,by+8,ColorToARGB(UiAccent()));
       PanelText(g_pcRight+4,by-6,DoubleToString(tick.bid,activeSymbolDigits),UiPanel());
      }
-   PanelText(12,g_pcBottom+9,TimeToString(rates[count-1].time,TIME_DATE|TIME_MINUTES),UiDim());
-   PanelText((int)MathMax(165,g_pcRight-110),g_pcBottom+9,TimeToString(rates[0].time,TIME_MINUTES),UiDim());
+   // Time labels follow visible candles after horizontal dragging; blank gutter stays blank.
+   int labelEdge=-1000;
+   if(oldestVisible>=0)
+      for(int axis=0;axis<4;axis++)
+        {
+         int bar=oldestVisible-(oldestVisible-newestVisible)*axis/3;
+         string stamp=TimeToString(rates[bar].time,axis==0?(TIME_DATE|TIME_MINUTES):TIME_MINUTES);
+         int tw=g_pc.TextWidth(stamp);
+         int tx=(int)MathMax(12,MathMin(g_pcRight-tw,PanelBarX(bar,count)-tw/2));
+         if(tx<=labelEdge+8) continue;
+         PanelText(tx,g_pcBottom+9,stamp,UiDim());labelEdge=tx+tw;
+        }
    string feed=quoted ? "Tick "+TimeToString(tick.time,TIME_SECONDS) : "No quote";
    if(quoted && (TimeCurrent()-tick.time>60 || nowMs-g_pcQuoteSeenMs>60000)) feed+=" (STALE)";
    // Quote status and navigation help remain accessible on hover, not over the chart.
@@ -901,8 +1032,17 @@ bool PanelClick(string name)
    if(key=="out") g_pcBars=(int)MathMin(240,g_pcBars+16);
    if(key=="older") g_pcOffset+=g_pcBars/2;
    if(key=="newer") g_pcOffset=(int)MathMax(0,g_pcOffset-g_pcBars/2);
-   if(key=="live") { g_pcOffset=0; g_pcTradePage=0; }
-   if(key=="range") g_pcFitOrders=!g_pcFitOrders;
+   g_pcDragging=false;
+   if(key=="live") { g_pcOffset=0;g_pcTradePage=0;g_pcPanX=0;g_pcManualY=false; }
+   if(key=="center") PanelCenterView();
+   if(key=="vplus") PanelVerticalZoom(0.8);
+   if(key=="vminus") PanelVerticalZoom(1.25);
+   if(key=="move")
+     {
+      g_pcMoveMode=!g_pcMoveMode;
+      ChartSetInteger(0,CHART_MOUSE_SCROLL,g_pcMoveMode?false:g_pcOldMouseScroll);
+     }
+   if(key=="range") { g_pcFitOrders=!g_pcFitOrders;g_pcManualY=false; }
    PanelDraw(true);
    ChartRedraw(0);
    return true;
@@ -914,6 +1054,7 @@ bool PanelTableClick(int x,int y)
    int tableTop=g_pcY+g_pcBottom+26;
    if(x<g_pcX+8 || x>=g_pcX+g_focusTableW-8 || y<tableTop || y>=g_pcY+g_pcH-PC_TABLE_BOTTOM_GAP+1) return false;
    uint now=GetTickCount();
+   if(g_pcLastDragMs!=0 && now-g_pcLastDragMs<350) return true;
    // Some terminal builds send both object and chart click notifications.
    if(g_pcLastTableClickMs!=0 && now-g_pcLastTableClickMs<250) return true;
    g_pcLastTableClickMs=now;
@@ -1917,7 +2058,7 @@ int OnInit()
    PanelDraw(true);
    if(PanelEnabled()) EventSetTimer(1);
 
-   Print("gold_x9 v6.70 (MQL4) initialised on ", activeTradeSymbol, " digits=", activeSymbolDigits, " point=", DoubleToString(activeSymbolPoint, activeSymbolDigits), " tags=", (drawResultTags ? "on" : "off"), " hud=", (showDashboardPanel ? "on" : "off"));
+   Print("gold_x9 v6.71 (MQL4) initialised on ", activeTradeSymbol, " digits=", activeSymbolDigits, " point=", DoubleToString(activeSymbolPoint, activeSymbolDigits), " tags=", (drawResultTags ? "on" : "off"), " hud=", (showDashboardPanel ? "on" : "off"));
    return(INIT_SUCCEEDED);
   }
 
@@ -1943,6 +2084,8 @@ void OnTimer()
 
 void OnChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam)
   {
+   if(id==CHARTEVENT_MOUSE_MOVE)
+     { PanelMouseMove((int)lparam,(int)dparam,(int)StringToInteger(sparam)); return; }
    if(id==CHARTEVENT_OBJECT_CLICK && PanelClick(sparam)) return;
    if((id==CHARTEVENT_CLICK || (id==CHARTEVENT_OBJECT_CLICK && sparam==PC_NAME))
       && PanelTableClick((int)lparam,(int)dparam)) return;
@@ -2529,10 +2672,10 @@ void FocusGeometry(int width,int height)
    g_focusReady=(width>=800 && height>=560);
    for(int i=0;i<HUD_NP;i++) { g_px[i]=8;g_py[i]=8;g_pw[i]=0;g_ph[i]=0; }
    if(!g_focusReady) return;
-   g_px[2]=8;g_py[2]=8;g_pw[2]=width-16;g_ph[2]=108;
+   g_px[2]=8;g_py[2]=8;g_pw[2]=width-16;g_ph[2]=(width<1180)?140:108;
    g_px[5]=8;g_py[5]=height-164;g_pw[5]=width-16;g_ph[5]=156;
-   g_px[3]=8;g_py[3]=124;g_pw[3]=width-16;g_ph[3]=g_py[5]-8-g_py[3];
-   int capacity=(int)MathMax(1,(g_ph[3]-42-100-26-44-8)/20);
+   g_px[3]=8;g_py[3]=g_py[2]+g_ph[2]+8;g_pw[3]=width-16;g_ph[3]=g_py[5]-8-g_py[3];
+   int capacity=(int)MathMax(1,(g_ph[3]-10-100-26-44-8)/20);
    g_focusRows=(int)MathMin(capacity,MathMax(1,MathMin(40,chartTradeRows)));
    g_focusDockH=44+g_focusRows*20;
    int equityWidth=showEquityCurve?(int)MathMax(224,MathMin(360,g_pw[3]*0.28)):0;
@@ -2574,9 +2717,14 @@ void HudCreate()
       HudMoveAll();return;
      }
    int width=g_pw[2];
-   HudRectObj(HUD_PREFIX+"header",2,0,0,width,36,UiPanel(),UiBorder());
-   HudBoundLabel(HUD_PREFIX+"brand",2,12,7,width-360,"X9  /  FULL FOCUS",UiAccent(),14,true);
-   HudBoundLabel(HUD_PREFIX+"market_info",2,245,11,width-600,"-",UiDim(),8,false);
+   bool compact=(g_chartW<1180);
+   int headerHeight=compact?68:36,metricY=headerHeight+8;
+   HudRectObj(HUD_PREFIX+"header",2,0,0,width,headerHeight,UiPanel(),UiBorder());
+   HudBoundLabel(HUD_PREFIX+"brand",2,12,8,150,"X9 / FULL FOCUS",UiAccent(),12,true);
+   HudBoundLabel(HUD_PREFIX+"symbol",2,compact?12:174,compact?43:11,compact?122:114,
+                 activeTradeSymbol+" M"+IntegerToString(Period()),UiAccent(),9,true);
+   HudBoundLabel(HUD_PREFIX+"market_info",2,compact?528:686,compact?44:11,
+                 compact?width-544:width-1034,"-",UiDim(),8,false);
    HudBoundLabel(HUD_PREFIX+"top_status",2,width-335,10,160,"TRADING ACTIVE",UiGood(),9,true);
    string theme=HUD_PREFIX+"theme_cycle";
    ObjectCreate(0,theme,OBJ_BUTTON,0,0,0);
@@ -2603,9 +2751,9 @@ void HudCreate()
    for(int i=0;i<6;i++)
      {
       int x=i*width/6,cellWidth=(i+1)*width/6-x-5;
-      HudRectObj(HUD_PREFIX+"metric"+IntegerToString(i),2,x,44,cellWidth,64,UiPanel(),UiBorder());
-      HudBoundLabel(HUD_PREFIX+"metric_label"+IntegerToString(i),2,x+10,51,cellWidth-20,labels[i],UiDim(),8,true);
-      HudBoundLabel(HUD_PREFIX+ids[i],2,x+10,70,cellWidth-20,"-",UiInk(),g_chartW<1000?16:20,true);
+      HudRectObj(HUD_PREFIX+"metric"+IntegerToString(i),2,x,metricY,cellWidth,64,UiPanel(),UiBorder());
+      HudBoundLabel(HUD_PREFIX+"metric_label"+IntegerToString(i),2,x+10,metricY+7,cellWidth-20,labels[i],UiDim(),8,true);
+      HudBoundLabel(HUD_PREFIX+ids[i],2,x+10,metricY+26,cellWidth-20,"-",UiInk(),g_chartW<1000?16:20,true);
      }
    HudRectObj(HUD_PREFIX+"trk_bg",5,0,0,g_pw[5],g_ph[5],UiPanel(),UiBorder());
    HudLabelObj(HUD_PREFIX+"trk_title",5,12,10,"TRADE TRACKER",UiAccent(),12,false,true);

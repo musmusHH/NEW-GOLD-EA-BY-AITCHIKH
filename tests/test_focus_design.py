@@ -52,6 +52,7 @@ void HudCreate();void HudMoveAll();
 string IntegerToString(int v){return to_string(v);}int StringToInteger(string s){return stoi(s);}
 int StringLen(string s){return s.size();}string StringSubstr(string s,int start,int n=99999){return s.substr(start,n);}
 int StringFind(string a,string b){auto pos=a.find(b);return pos==string::npos?-1:int(pos);}
+string activeTradeSymbol="XAUUSDr";int Period(){return 5;}
 string AccountCurrency(){return "USD";}
 template<class A,class B> double MathMax(A a,B b){return max(double(a),double(b));}
 template<class A,class B> double MathMin(A a,B b){return min(double(a),double(b));}
@@ -68,7 +69,7 @@ int main(){
      assert(g_py[2]+g_ph[2]<g_py[3]);
      assert(g_py[3]+g_ph[3]<g_py[5]);assert(g_py[5]+g_ph[5]<=h-8);
      assert(g_px[4]+g_pw[4]==w-8);
-     assert(g_ph[3]-8-g_focusDockH-26-42>=100);
+     assert(g_ph[3]-8-g_focusDockH-26-10>=100);
      for(auto &entry:nodes){auto &n=entry.second;
        int x=n.p[OBJPROP_XDISTANCE],y=n.p[OBJPROP_YDISTANCE];
        assert(x>=0&&x<w&&y>=0&&y<h);
@@ -83,7 +84,7 @@ int main(){
  }
  width=1280;height=800;HudLayout();
  showEquityCurve=false;HudLayout();assert(g_focusTableW==g_pw[3]);
- chartTradeRows=40;showEquityCurve=true;HudLayout();assert(g_ph[3]-8-g_focusDockH-26-42>=100);
+ chartTradeRows=40;showEquityCurve=true;HudLayout();assert(g_ph[3]-8-g_focusDockH-26-10>=100);
  HudSetText(HUD_PREFIX+"top_balance","123456789012345678901234567890.12",UiInk());
  assert(nodes[HUD_PREFIX+"top_balance"].text[OBJPROP_TEXT].find("...")!=string::npos);
  assert(nodes[HUD_PREFIX+"top_balance"].text[OBJPROP_TOOLTIP]=="123456789012345678901234567890.12");

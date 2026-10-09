@@ -44,6 +44,10 @@ CHART_COLOR_CHART_DOWN=23,CHART_COLOR_CANDLE_BULL=24,CHART_COLOR_CANDLE_BEAR=25,
 CHART_COLOR_CHART_LINE=26,CHART_COLOR_BID=27,CHART_COLOR_ASK=28,CHART_COLOR_STOP_LEVEL=29,
 CHART_COLOR_VOLUME=30,CHART_COLOR_GRID=31,CHART_SHOW_PRICE_SCALE=32,CHART_SHOW_DATE_SCALE=33,CHART_SHOW_OHLC=34;
 bool hideOriginalChart=true;
+double chartRightSpacePct=20;
+const int CHART_EVENT_MOUSE_MOVE=40,CHART_MOUSE_SCROLL=41;
+double PanelBarSpacing(int count);
+void PanelDraw(bool force);
 int chartTradeRows=8;
 const int HUD_GRAPHITE=0,HUD_LIGHT=1,HUD_MIDNIGHT=2,HUD_EMERALD=3;
 int g_activeTheme=0;
@@ -71,6 +75,7 @@ void EqCanvasDestroy(){}void EqDraw(){}
 map<int,long> chart={{1,1},{2,1},{3,1366},{4,700}};
 map<string,string> objects;
 map<string,long> masks;
+map<string,map<int,long>> props;
 uint clockMs=1000; datetime latest=100000;
 int barsAvailable=500,relayouts=0;
 uint GetTickCount(){return clockMs;}
@@ -81,7 +86,7 @@ void ChartRedraw(int){}
 void HudLayout(){FocusGeometry(chart[CHART_WIDTH_IN_PIXELS],chart[CHART_HEIGHT_IN_PIXELS]);}
 int ObjectFind(int,string n){return objects.count(n)?0:-1;}
 bool ObjectCreate(int,string n,int,int,int,int){objects[n]="";return true;}
-void ObjectSetInteger(int,string name,int prop,long value){if(prop==OBJPROP_TIMEFRAMES)masks[name]=value;}
+void ObjectSetInteger(int,string name,int prop,long value){props[name][prop]=value;if(prop==OBJPROP_TIMEFRAMES)masks[name]=value;}
 long ObjectGetInteger(int,string name,int){return masks[name];}
 int ObjectsTotal(int,int,int){return objects.size();}
 string ObjectName(int,int index,int,int){auto it=objects.begin();advance(it,index);return it->first;}
@@ -149,6 +154,7 @@ int main(){
  objects[HUD_PREFIX+"title"]="";masks[HUD_PREFIX+"title"]=511;
  assert(!g_pcFitOrders); // BARS is now the default.
  g_pcFitOrders=true; // Exercise ALL scaling below as before.
+ chart[CHART_MOUSE_SCROLL]=1;chart[CHART_EVENT_MOUSE_MOVE]=0;
  chart[CHART_SHOW_PRICE_SCALE]=1;chart[CHART_COLOR_CHART_UP]=123;
  orders={{OP_BUY,"XAUUSD",123457,4180,4160,4200,1.5},
          {OP_SELLSTOP,"XAUUSD",123457,4155,4190,4140,0},
@@ -200,6 +206,44 @@ int main(){
  assert(PanelPriceY(g_pcHigh)==g_pcTop);assert(PanelPriceY(g_pcLow)==g_pcBottom);
  assert(PanelPriceY(g_pcHigh+100)==g_pcTop);
  assert(PanelBarX(0,64)>PanelBarX(63,64));
+ assert(PanelBarX(0,g_pcRenderedBars)<g_pcRight-(g_pcRight-20)*0.18);
+ assert(g_pcTop==10); // No toolbar or symbol consuming plot space.
+ for(auto key:{"in","out","older","newer","live","range","move","center","vplus","vminus"}){
+   auto p=props[PC_BUTTON+key];
+   assert(p[OBJPROP_YDISTANCE]<g_pcY);
+   assert(p[OBJPROP_YDISTANCE]+p[OBJPROP_YSIZE]<=g_py[2]+36);
+ }
+ int barsBefore=g_pcBars;
+ double spanBefore=g_pcHigh-g_pcLow;
+ PanelClick(PC_BUTTON+"vplus");assert(g_pcHigh-g_pcLow<spanBefore);assert(g_pcBars==barsBefore);
+ PanelClick(PC_BUTTON+"vminus");assert(abs((g_pcHigh-g_pcLow)-spanBefore)<1e-6);
+ PanelClick(PC_BUTTON+"center");
+ assert(abs(PanelBarX(0,g_pcRenderedBars)-(12+(g_pcRight-20)*0.5))<=1);
+ assert(abs(PanelPriceY(g_pcLastVisiblePrice)-(g_pcTop+g_pcBottom)*0.5)<=1);
+ PanelClick(PC_BUTTON+"move");assert(g_pcMoveMode);assert(chart[CHART_MOUSE_SCROLL]==0);
+ int mx=g_pcX+g_pcRight/2,my=g_pcY+(g_pcTop+g_pcBottom)/2;
+ assert(!PanelMouseMove(g_pcX+15,g_pcY+g_pcBottom+40,1)); // table cannot start a chart drag
+ assert(PanelMouseMove(mx,my,1));double oldPan=g_pcPanX,oldCenter=g_pcViewCenter;
+ clockMs+=50;PanelMouseMove(mx+50,my+25,1);
+ assert(g_pcPanX>oldPan && g_pcViewCenter>oldCenter);
+ PanelMouseMove(mx+50,my+25,0);assert(!g_pcDragging);
+ int pageBefore=g_pcTradePage;
+ PanelTableClick(g_pcX+20,g_pcY+g_pcBottom+30);assert(g_pcTradePage==pageBefore);
+ // Large drags/zoom clip candles and tags to plot, never to the price gutter.
+ g_tagN=2;g_tagTime[0]=latest;g_tagTime[1]=latest-3000;
+ g_tagPrice[0]=4184;g_tagPrice[1]=4180;g_tagProfit[0]=1;g_tagProfit[1]=-1;
+ for(int dir:{-1,1}){
+   PanelMouseMove(mx,my,1);clockMs+=50;PanelMouseMove(mx+dir*5000,my+dir*5000,1);
+   PanelMouseMove(mx,my,0);PanelDraw(true);
+ }
+ for(int i=0;i<25;i++)PanelClick(PC_BUTTON+"vplus");
+ assert(g_pcViewSpan>0 && g_pcViewSpan>=(g_pcAutoHigh-g_pcAutoLow)*0.149);
+ for(int i=0;i<35;i++)PanelClick(PC_BUTTON+"vminus");
+ assert(g_pcViewSpan<=(g_pcAutoHigh-g_pcAutoLow)*8.001);
+ g_tagN=0;
+ PanelClick(PC_BUTTON+"live");assert(!g_pcManualY && g_pcPanX==0);
+ PanelClick(PC_BUTTON+"move");assert(!g_pcMoveMode && chart[CHART_MOUSE_SCROLL]==1);
+ clockMs+=500;
  PanelClick(PC_BUTTON+"range"); assert(g_pcLow>4170);
  PanelClick(PC_BUTTON+"older");assert(g_pcOffset==32);assert(objects[PC_NAME].find("HISTORY |")!=string::npos);
  latest+=300;PanelDraw(true);assert(g_pcOffset==33);
@@ -245,7 +289,13 @@ int main(){
  assert(!PanelTableClick(g_pcX+20,g_pcY+g_pcH-2));
  // Exercise pixel bounds across normal/resized windows and zoom settings.
  for(int width=980;width<=1600;width+=71)
-   for(int height=500;height<=900;height+=83){chart[3]=width;chart[4]=height;PanelDraw(true);}
+   for(int height=500;height<=900;height+=83){chart[3]=width;chart[4]=height;PanelDraw(true);
+     if(g_pcReady)for(auto key:{"in","out","older","newer","live","range","move","center","vplus","vminus"}){
+       auto p=props[PC_BUTTON+key];
+       assert(p[OBJPROP_XDISTANCE]>=0&&p[OBJPROP_XDISTANCE]+p[OBJPROP_XSIZE]<width);
+       assert(p[OBJPROP_YDISTANCE]+p[OBJPROP_YSIZE]<g_pcY);
+     }
+   }
  chart[4]=700;
  chart[3]=1000;PanelDraw(true);assert(g_pcReady); // smallest supported center
  chart[3]=799;PanelDraw(true);assert(!g_pcReady);assert(chart[1]==1&&chart[2]==1);
@@ -254,6 +304,7 @@ int main(){
  showLiveChartPanel=true;g_pc.fail=true;PanelDraw(true);assert(!g_pcReady);assert(chart[1]==1);
  g_pc.fail=false;PanelDraw(true);PanelDestroy();assert(chart[1]==1&&chart[2]==1);
  assert(masks["old_result_box"]==63&&masks["manual_line"]==7&&masks["new_line"]==15);
+ assert(chart[CHART_MOUSE_SCROLL]==1 && chart[CHART_EVENT_MOUSE_MOVE]==0);
  assert(chart[CHART_SHOW_PRICE_SCALE]==1);assert(chart[CHART_COLOR_CHART_UP]==123);
 }
 '''
@@ -270,7 +321,7 @@ int main(){
         self.assertIn('MathMax(0,chartStartOffset)', SOURCE)
         self.assertNotIn('"str_S"', SOURCE)
         self.assertIn('"PENDING ORDERS"', SOURCE)
-        self.assertIn('g_px[3]=8;g_py[3]=124;g_pw[3]=width-16;', SOURCE)
+        self.assertIn('g_px[3]=8;g_py[3]=g_py[2]+g_ph[2]+8;', SOURCE)
         self.assertNotIn('#resource', SOURCE)
 
     def test_trailing_recorded_only_after_modify_success(self):

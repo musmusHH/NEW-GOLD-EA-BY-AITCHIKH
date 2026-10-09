@@ -1,4 +1,4 @@
-# X9 Full Focus — design 4 / v6.700
+# X9 Full Focus — design 4 / v6.710
 
 Implements the selected **Graphite Full Focus** layout with four complete palettes:
 
@@ -24,6 +24,24 @@ Click **THEME: GRAPHITE >** in the top-right header to cycle through all four. I
 
 The chart uses actual broker candles/quotes. Net values retain the existing commission-estimate convention. TP/SL/TRAIL estimates, trailing-update confirmation, order matching, closed-only equity history, and native-chart hiding/restoration remain in effect.
 
+## Chart navigation — v6.710
+
+The symbol/timeframe and all ten chart controls are in the upper header, not over the candle plot. At widths of 1180 pixels or more, they share the first header row and free 32 pixels for candles. Narrower supported windows use a second header row without reducing the previous candle-plot height.
+
+| Control | Action |
+| --- | --- |
+| **MOVE** | Toggle drag mode, then hold the left mouse button inside the candle area and drag horizontally or vertically. Click MOVE again to disable dragging. |
+| **CENTER** | Put the newest candle in the loaded view at the horizontal midpoint, with its close centered vertically. Keeps the current history offset and price span. |
+| **+ / −** | Expand/compress candle spacing by showing fewer/more bars. |
+| **Y+ / Y−** | Expand/compress candles vertically without changing the number of bars. |
+| **< / >** | Browse older/newer history. |
+| **LIVE** | Return to latest bars, first trade page, default horizontal placement and automatic price scaling. |
+| **BARS / ALL** | Toggle candle-only/all-order-level automatic price fitting; clears manual vertical scaling. |
+
+`chartRightSpacePct` defaults to **20%**, clamped to 8–45%. It reserves blank space between the latest candles and the right price scale in the default view. Dragging keeps a minimum right gutter; offscreen candles and result badges are clipped rather than drawn across the price scale or trade dock. Nearby axis text is suppressed around the current-price badge to avoid overlapping price labels.
+
+Manual vertical placement remains stable across quote updates until LIVE or BARS/ALL resets it. MOVE temporarily disables native mouse scrolling; disabling MOVE or removing/falling back from the panel restores the saved setting. All navigation is display-only: it never moves real orders, SL or TP.
+
 ## Screen sizes
 
 The layout uses actual chart-client dimensions, not the full desktop resolution. It supports **800×560 and larger** chart areas. The trade dock limits its row count to leave at least 100 pixels of candle plot. Four rows are requested by default; small windows may display fewer, and `chartTradeRows` can request more. Pagination always keeps additional trades accessible.
@@ -42,6 +60,7 @@ Compile and test on a demo account first. This environment cannot run MetaEditor
 
 The 12 tests exercise extracted MQL-compatible code against C++ terminal/canvas stubs, including:
 
+- Right candle space, header control bounds, centering, horizontal/vertical dragging, vertical zoom bounds, clipping, LIVE reset and native mouse-setting restoration.
 - All four palettes across 800/900/1024/1280/1366/1920 widths and 560/600/720/800/1080 heights.
 - Object bounds, chart/trade/equity/tracker separation, text clipping, row capacities and small-window fallback.
 - Four theme changes returning to the original palette without resetting sample trading/view state.
@@ -58,3 +77,5 @@ The entry, sizing, pending-expiry, open-position management, strategy-tick and d
 4. Check all actual open and pending tickets, lot sizes and P/L against the Trade tab; page the table.
 5. Verify TRADE TRACKER remains visible and the equity dock stays beside—not over—the table.
 6. Verify no trade, stop, target, DD halt, trailing confirmation or chart navigation resets when switching themes.
+
+7. Enable MOVE, drag in all directions, try CENTER and both zoom axes. Verify the quote updates without resetting manual placement; LIVE restores auto scaling. Check the toolbar at wide and compact sizes and verify mouse scrolling is restored when MOVE/panel is disabled.
