@@ -20,7 +20,7 @@
 //+------------------------------------------------------------------+
 #property copyright   "Mr. CapFree"
 #property link        "https://example.com"
-#property version     "6.580"   // Broker-data chart panel + carryover performance
+#property version     "6.590"   // Broker-data chart panel + carryover performance
 #property description "gold x9 MQL4 + LAB M1-M4 + live broker-data chart panel"
 #property strict
 #include <Canvas\Canvas.mqh>
@@ -408,6 +408,7 @@ void   EqCellSet(string name, int x, int y, int w, int h, color clr, bool used);
 void   EqDraw();
 
 //=== Broker-data chart panel (display only; never sends/modifies orders) ===
+#define PC_TABLE_BOTTOM_GAP 8 // Reclaim the former footer space for candles.
 #define PC_NAME "GX9PC_chart"
 #define PC_BUTTON "GX9PC_btn_"
 CCanvas g_pc;
@@ -565,9 +566,9 @@ void PanelTradeTable()
    int pageRows=(g_pcH>=360)?4:((g_pcH>=290)?2:1);
    int pages=(int)MathMax(1,(ArraySize(tickets)+pageRows-1)/pageRows);
    g_pcTradePage=g_pcTradePage%pages;
-   int tableTop=g_pcH-52-(36+pageRows*20);
+   int tableTop=g_pcH-PC_TABLE_BOTTOM_GAP-(36+pageRows*20);
    g_pcBottom=tableTop-26;
-   g_pc.FillRectangle(8,tableTop,g_pcW-8,g_pcH-51,ColorToARGB(C'20,30,40'));
+   g_pc.FillRectangle(8,tableTop,g_pcW-8,g_pcH-PC_TABLE_BOTTOM_GAP+1,ColorToARGB(C'20,30,40'));
    string currency=AccountCurrency();
    string unit=(currency=="USD")?"$":currency;
    PanelText(12,tableTop+2,"TRADES "+currency+" | TP/SL ~ estimated net",C'58,181,255');
@@ -806,7 +807,7 @@ bool PanelTableClick(int x,int y)
   {
    if(!g_pcReady) return false;
    int tableTop=g_pcY+g_pcBottom+26;
-   if(x<g_pcX+8 || x>=g_pcX+g_pcW-8 || y<tableTop || y>=g_pcY+g_pcH-51) return false;
+   if(x<g_pcX+8 || x>=g_pcX+g_pcW-8 || y<tableTop || y>=g_pcY+g_pcH-PC_TABLE_BOTTOM_GAP+1) return false;
    uint now=GetTickCount();
    // Some terminal builds send both object and chart click notifications.
    if(g_pcLastTableClickMs!=0 && now-g_pcLastTableClickMs<250) return true;
@@ -1745,7 +1746,7 @@ int OnInit()
    PanelDraw(true);
    if(PanelEnabled()) EventSetTimer(1);
 
-   Print("gold_x9 v6.58 (MQL4) initialised on ", activeTradeSymbol, " digits=", activeSymbolDigits, " point=", DoubleToString(activeSymbolPoint, activeSymbolDigits), " tags=", (drawResultTags ? "on" : "off"), " hud=", (showDashboardPanel ? "on" : "off"));
+   Print("gold_x9 v6.59 (MQL4) initialised on ", activeTradeSymbol, " digits=", activeSymbolDigits, " point=", DoubleToString(activeSymbolPoint, activeSymbolDigits), " tags=", (drawResultTags ? "on" : "off"), " hud=", (showDashboardPanel ? "on" : "off"));
    return(INIT_SUCCEEDED);
   }
 

@@ -140,6 +140,10 @@ int main(){
  assert(contains("+19.83"));assert(contains("-20.17"));assert(contains("Pending"));
  accountCurrency="EUR";PanelDraw(true);assert(contains("LIVE EUR"));accountCurrency="USD";
  assert(g_pcReady);assert(chart[1]==0 && chart[2]==0);
+ // The table is bottom-anchored; the removed footer adds 44 pixels to candles.
+ int oldBottom=g_pcH-52-(36+4*20)-26;
+ assert(g_pcBottom==oldBottom+44);
+ assert(g_pcBottom+26+36+4*20==g_pcH-PC_TABLE_BOTTOM_GAP);
  assert(g_pcLow<4140 && g_pcHigh>4200);
  assert(objects[PC_NAME].find("LIVE |")!=string::npos);assert(contains("BUY"));
  assert(objects[PC_NAME].find("SELL STOP")!=string::npos);
@@ -164,6 +168,9 @@ int main(){
  assert(!PanelTableClick(g_pcX+20,g_pcY+60));
  assert(PanelTableClick(g_pcX+20,g_pcY+g_pcBottom+30));assert(g_pcTradePage==1);
  PanelTableClick(g_pcX+20,g_pcY+g_pcBottom+30);assert(g_pcTradePage==1);
+ clockMs+=300;
+ assert(PanelTableClick(g_pcX+20,g_pcY+g_pcH-15));assert(g_pcTradePage==2);
+ assert(!PanelTableClick(g_pcX+20,g_pcY+g_pcH-2));
  // Exercise pixel bounds across normal/resized windows and zoom settings.
  for(int width=980;width<=1600;width+=71)
    for(int height=500;height<=900;height+=83){chart[3]=width;chart[4]=height;PanelDraw(true);}

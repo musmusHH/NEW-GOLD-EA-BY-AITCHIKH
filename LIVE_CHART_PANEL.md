@@ -1,4 +1,4 @@
-# Live broker-data chart panel — v6.580
+# Live broker-data chart panel — v6.590
 
 ## Install
 
@@ -23,6 +23,8 @@ All order lines remain at their actual prices. The stacked order-label text and 
 Up to four non-overlapping closed-result badges remain at their candle/close-price coordinates from the existing result-tag cache. The `drawResultTags` setting and historical lookback continue to control these result markers.
 
 ## Per-trade money table
+
+The trade table is anchored near the bottom of the middle panel, just above TRADE TRACKER. Reclaiming the former footer space adds 44 pixels to the candle plot without shrinking trade rows.
 
 A dedicated table below the candles shows **TICKET | TYPE | LIVE $ | TP~ $ | SL~ $** on USD accounts. Other accounts display their actual currency (for example EUR or USC), not a misleading dollar label.
 
