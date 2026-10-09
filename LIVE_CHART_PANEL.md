@@ -1,4 +1,4 @@
-# Live broker-data chart panel — v6.590
+# Live broker-data chart panel — v6.600
 
 ## Install
 
@@ -66,3 +66,20 @@ Trading signals, ownership of managed positions, order limits, stop management a
 ### Additional v6.580 demo checks
 
 Compare each ticket with the MT4 Trade tab. Check both BUY and SELL targets/stops, a profitable trailing SL, unset SL/TP, pending orders, and table-click pagination. Verify currency labels on non-USD accounts. Automated tests additionally cover BUY/SELL cash signs, non-point-sized ticks, missing tick metadata, absent stops, pending status and currency headers.
+
+## v6.600 — startup settings and dashboard layout
+
+In EA Properties → Inputs:
+
+- `chartStartBars` — starting candle count, clamped to 16–240 (default 64).
+- `chartStartOffset` — how many bars back to start (default 0 = live).
+- `chartStartFitOrders` — **false by default: BARS**; true starts in ALL mode.
+- `hideOriginalChart` — true by default. While the custom panel is available, the underlying native chart colors match the dashboard panel and the native price/date scales and OHLC text are hidden. The custom chart's own price scale stays visible. Saved native appearance is restored when the custom panel is removed or falls back on a small window.
+
+The runtime zoom, navigation and ALL/BARS buttons still work; reattaching the EA reapplies the startup inputs.
+
+The unused S1–S8 rows are replaced with open BUY/SELL counts, pending BUY/SELL counts, open lots, spread, daily drawdown, average closed-trade holding time, closed-trade count and closed win rate. S9 trade count (open + closed) and total net P/L remain. All counts use the reporting filter, not a change to management ownership.
+
+On normal-sized windows the strategy panel stretches with the available height, and the equity panel sits immediately below it, eight pixels above TRADE TRACKER. The existing small-window HUD minimum-size limitations still apply.
+
+Demo checks: start with different bar counts/offsets, confirm BARS is the default, switch themes and resize, check native axes/candles are hidden while the custom axis remains visible, and detach/disable the custom panel to verify the native chart returns. Automated tests check the startup source wiring, native hide/restore behavior, replacement rows and normal-height layout geometry; full MetaEditor/MT4 testing is still required.

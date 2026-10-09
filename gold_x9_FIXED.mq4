@@ -20,7 +20,7 @@
 //+------------------------------------------------------------------+
 #property copyright   "Mr. CapFree"
 #property link        "https://example.com"
-#property version     "6.590"   // Broker-data chart panel + carryover performance
+#property version     "6.600"   // Broker-data chart panel + carryover performance
 #property description "gold x9 MQL4 + LAB M1-M4 + live broker-data chart panel"
 #property strict
 #include <Canvas\Canvas.mqh>
@@ -154,6 +154,10 @@ input color  bullBodyColor         = C'255,255,255';    // Bull Candle Body
 input color  bullWickColor         = C'176,137,30';    // Bull Candle Wick
 input color  bearBodyColor         = C'219,181,65';     // Bear Candle Body
 input color  bearWickColor         = C'176,137,30';     // Bear Candle Wick
+input int    chartStartBars       = 64;               // Custom chart starting candles (16-240)
+input int    chartStartOffset     = 0;                // Starting bar offset (0 = live)
+input bool   chartStartFitOrders  = false;            // false = BARS (default), true = ALL levels
+input bool   hideOriginalChart    = true;             // Hide native candles/axes while custom chart is active
 input bool   showLiveChartPanel   = true;             // Real broker candles + order overlay in middle panel
 input bool   showDashboardPanel    = true;             // Show The 6-Panel CARBON GRID HUD
 input bool   showSpreadTag         = true;             // Show LIVE Panel (spread/PL/pips/lots/countdown)
@@ -416,7 +420,7 @@ bool g_pcReady=false, g_pcSaved=false;
 long g_pcOldLevels=0, g_pcOldForeground=0;
 int g_pcX=0, g_pcY=0, g_pcW=0, g_pcH=0;
 int g_pcBars=64, g_pcOffset=0, g_pcTradePage=0;
-bool g_pcFitOrders=true;
+bool g_pcFitOrders=false;
 datetime g_pcLatest=0;
 double g_pcLow=0, g_pcHigh=1;
 int g_pcTop=42, g_pcBottom=0, g_pcRight=0;
@@ -434,8 +438,33 @@ bool PanelEnabled()
    return showDashboardPanel && showLiveChartPanel && (!IsTesting() || IsVisualMode());
   }
 
+// Preserve native appearance for panel fallback/removal.
+ENUM_CHART_PROPERTY_INTEGER g_pcProps[15]={CHART_COLOR_BACKGROUND,CHART_COLOR_FOREGROUND,
+   CHART_COLOR_CHART_UP,CHART_COLOR_CHART_DOWN,CHART_COLOR_CANDLE_BULL,CHART_COLOR_CANDLE_BEAR,
+   CHART_COLOR_CHART_LINE,CHART_COLOR_BID,CHART_COLOR_ASK,CHART_COLOR_STOP_LEVEL,
+   CHART_COLOR_VOLUME,CHART_COLOR_GRID,CHART_SHOW_PRICE_SCALE,CHART_SHOW_DATE_SCALE,CHART_SHOW_OHLC};
+long g_pcPropValues[15];
+bool g_pcAppearanceSaved=false;
+
+void PanelHideNative()
+  {
+   if(!g_pcReady || !hideOriginalChart) return;
+   if(!g_pcAppearanceSaved)
+     {
+      for(int i=0;i<15;i++) g_pcPropValues[i]=ChartGetInteger(0,g_pcProps[i]);
+      g_pcAppearanceSaved=true;
+     }
+   for(int c=0;c<12;c++) ChartSetInteger(0,g_pcProps[c],UiPanel());
+   for(int v=12;v<15;v++) ChartSetInteger(0,g_pcProps[v],false);
+  }
+
 void PanelRestore()
   {
+   if(g_pcAppearanceSaved)
+     {
+      for(int i=0;i<15;i++) ChartSetInteger(0,g_pcProps[i],g_pcPropValues[i]);
+      g_pcAppearanceSaved=false;
+     }
    if(!g_pcSaved) return;
    ChartSetInteger(0,CHART_SHOW_TRADE_LEVELS,g_pcOldLevels);
    ChartSetInteger(0,CHART_FOREGROUND,g_pcOldForeground);
@@ -657,6 +686,7 @@ void PanelDraw(bool force)
       // Replace native result objects, keeping their history state intact.
       ObjectsDeleteAll(0,TAG_PREFIX);
      }
+   PanelHideNative();
    g_pc.Erase(ColorToARGB(C'12,18,26'));
    g_pcRight=w-83; g_pcBottom=h-52;
    PanelText(10,9,activeTradeSymbol+" M"+IntegerToString(Period()),C'58,181,255');
@@ -1597,6 +1627,9 @@ void SeedEquityHistory()
 
 int OnInit()
   {
+   g_pcBars=(int)MathMax(16,MathMin(240,chartStartBars));
+   g_pcOffset=(int)MathMax(0,chartStartOffset);
+   g_pcFitOrders=chartStartFitOrders;
    int      resetOuterIndex;
    int      resetInnerIndex;
    datetime nowDateTime;
@@ -1746,7 +1779,7 @@ int OnInit()
    PanelDraw(true);
    if(PanelEnabled()) EventSetTimer(1);
 
-   Print("gold_x9 v6.59 (MQL4) initialised on ", activeTradeSymbol, " digits=", activeSymbolDigits, " point=", DoubleToString(activeSymbolPoint, activeSymbolDigits), " tags=", (drawResultTags ? "on" : "off"), " hud=", (showDashboardPanel ? "on" : "off"));
+   Print("gold_x9 v6.60 (MQL4) initialised on ", activeTradeSymbol, " digits=", activeSymbolDigits, " point=", DoubleToString(activeSymbolPoint, activeSymbolDigits), " tags=", (drawResultTags ? "on" : "off"), " hud=", (showDashboardPanel ? "on" : "off"));
    return(INIT_SUCCEEDED);
   }
 
@@ -2195,6 +2228,7 @@ void manageOpenPositions()
 
 void ApplyChartStyle()
   {
+   if(g_pcReady && hideOriginalChart) { PanelHideNative(); return; }
    long chartId=0;
    color bg=UiChartBg(), fg=UiChartFg(), bull=UiBull(), bear=UiBear();
    ChartSetInteger(chartId,CHART_MODE,CHART_CANDLES);
@@ -2345,6 +2379,15 @@ void HudMoveAll()
    for(int i = 0; i < g_hN; i++)
      {
       int p = g_hPanel[i];
+      if(g_hName[i]==HUD_PREFIX+"str_fill")
+         ObjectSetInteger(0,g_hName[i],OBJPROP_YSIZE,g_ph[1]);
+      if(StringFind(g_hName[i],HUD_PREFIX+"str_info")==0)
+        {
+         int row=(int)StringToInteger(StringSubstr(g_hName[i],StringLen(g_hName[i])-1));
+         int rowHeight=(g_ph[1]-40)/10;
+         g_hDy[i]=36+row*rowHeight+((g_hRect[i]==1)?0:3);
+         if(g_hRect[i]==1) ObjectSetInteger(0,g_hName[i],OBJPROP_YSIZE,rowHeight);
+        }
       int x = g_px[p] + g_hDx[i];
       int y = g_py[p] + g_hDy[i];
       if(g_hRect[i] == 0 && g_hRA[i] == 1)
@@ -2379,10 +2422,10 @@ void HudLayout()
    if(g_chartH<560) g_chartH=560;
 
    g_pw[0]=ACC_W; g_ph[0]=ACC_H; g_px[0]=1; g_py[0]=96;
-   g_pw[1]=STR_W; g_ph[1]=STR_H; g_px[1]=g_chartW-281; g_py[1]=96;
+   g_pw[1]=STR_W; g_ph[1]=(int)MathMax(STR_H,g_chartH-409); g_px[1]=g_chartW-281; g_py[1]=96;
    g_pw[2]=THM_W; g_ph[2]=THM_H; g_px[2]=1; g_py[2]=2;
    g_pw[3]=1; g_ph[3]=1; g_px[3]=0; g_py[3]=0;
-   g_pw[4]=EQP_W; g_ph[4]=EQP_H; g_px[4]=g_chartW-281; g_py[4]=314;
+   g_pw[4]=EQP_W; g_ph[4]=EQP_H; g_px[4]=g_chartW-281; g_py[4]=g_py[1]+g_ph[1]+8;
    g_trkW=TRK_W; g_trkScale=1.0; g_pw[5]=TRK_W; g_ph[5]=TRK_H; g_px[5]=1; g_py[5]=g_chartH-152;
    HudMoveAll();
   }
@@ -2393,7 +2436,8 @@ void HudCreate()
    string td="::Images\\GX9\\"+ThemeCode()+"\\";
    HudBitmapObj(HUD_PREFIX+"top_bmp",2,0,0,td+"top.bmp");
    HudBitmapObj(HUD_PREFIX+"acc_bmp",0,0,0,td+"account.bmp");
-   HudBitmapObj(HUD_PREFIX+"str_bmp",1,0,0,td+"strategy.bmp");
+   HudRectObj(HUD_PREFIX+"str_fill",1,0,0,STR_W,g_ph[1],UiPanel(),UiPanel());
+   HudLabelObj(HUD_PREFIX+"str_heading",1,15,10,"STRATEGY / LIVE",UiAccent(),14,false,true);
    HudBitmapObj(HUD_PREFIX+"eq_bmp",4,0,0,td+"equity.bmp");
    HudBitmapObj(HUD_PREFIX+"trk_bmp",5,0,0,td+"tracker.bmp");
    HudBitmapObj(HUD_PREFIX+"bottom_rail",5,0,150,td+"bottom.bmp");
@@ -2432,9 +2476,19 @@ void HudCreate()
    for(int av=0;av<5;av++) HudLabelObj(HUD_PREFIX+"acc_V"+IntegerToString(av),0,0,39+av*30,"-",ink,13,true,true);
    for(int aw=0;aw<4;aw++) HudLabelObj(HUD_PREFIX+"acc_W"+IntegerToString(aw),0,0,39+(aw+5)*30,"-",ink,13,true,true);
 
-   for(int sr=0;sr<10;sr++) HudRectObj(HUD_PREFIX+"str_mask"+IntegerToString(sr),1,78,36+sr*16,190,15,(sr%2==0)?paper:stripe,(sr%2==0)?paper:stripe);
-   for(int ss=1;ss<=9;ss++) HudLabelObj(HUD_PREFIX+"str_S"+IntegerToString(ss)+"_3",1,82,37+(ss-1)*16,"- / - / -",ink,9,false,true);
-   HudLabelObj(HUD_PREFIX+"str_T3",1,82,181,"0 / 0.0% / +0.00",ink,9,false,true);
+   string infoLabels[10];
+   infoLabels[0]="OPEN BUY / SELL"; infoLabels[1]="PENDING BUY / SELL";
+   infoLabels[2]="OPEN LOTS"; infoLabels[3]="SPREAD (POINTS)";
+   infoLabels[4]="DAILY DD"; infoLabels[5]="AVG HOLD (CLOSED)";
+   infoLabels[6]="CLOSED TRADES"; infoLabels[7]="WIN RATE (CLOSED)";
+   infoLabels[8]="S9 TRADES (ALL)"; infoLabels[9]="TOTAL NET P/L";
+   for(int r=0;r<10;r++)
+     {
+      string ri=IntegerToString(r);
+      HudRectObj(HUD_PREFIX+"str_infoB"+ri,1,8,36+r*16,264,16,(r%2==0)?paper:stripe,paper);
+      HudLabelObj(HUD_PREFIX+"str_infoL"+ri,1,14,39+r*16,infoLabels[r],ink,8,false,true);
+      HudLabelObj(HUD_PREFIX+"str_infoV"+ri,1,0,39+r*16,"-",ink,9,true,true);
+     }
 
    HudRectObj(HUD_PREFIX+"eq_plotmask",4,12,34,256,96,paper,paper);
 
@@ -2727,38 +2781,31 @@ void HudTick(bool force)
       ObjectSetInteger(0, HUD_PREFIX + "acc_bar", OBJPROP_BGCOLOR, (g_currentDD >= maxAllowedDrawdownPct) ? UiBad() : UiGood());
      }
 
-   for(int s = 1; s <= 9; s++)
+   int buyCount=0,sellCount=0,pendingBuy=0,pendingSell=0;
+   for(int q=0;q<OrdersTotal();q++)
      {
-      n = IntegerToString(s);
-      bool built = (s == 9);
-      color rc = built ? UiInk() : HudDim2();
-      HudSetText(HUD_PREFIX + "str_S" + n + "_0", "S" + n, built ? UiAmber() : HudDim2());
-      HudSetText(HUD_PREFIX + "str_S" + n + "_1", built ? IntegerToString(statTrades[s]) : "-", rc);
-      HudSetText(HUD_PREFIX + "str_S" + n + "_2", built ? DoubleToString(winRate, 1) : "-", rc);
-      HudSetText(HUD_PREFIX + "str_S" + n + "_3", built ? ((statClosed[s] >= 0.0 ? "+" : "") + DoubleToString(statClosed[s], 2)) : "-", built ? ((statClosed[s] >= 0.0) ? UiGood() : UiBad()) : rc);
-      HudSetText(HUD_PREFIX + "str_S" + n + "_4", built ? DoubleToString(strategyLots, 2) : "-", rc);
+      if(!OrderSelect(q,SELECT_BY_POS,MODE_TRADES)) continue;
+      if(OrderCloseTime()!=0 || !IsMatchingOrderIdentity()) continue;
+      int t=OrderType();
+      if(t==OP_BUY) buyCount++;
+      if(t==OP_SELL) sellCount++;
+      if(t==OP_BUYSTOP || t==OP_BUYLIMIT) pendingBuy++;
+      if(t==OP_SELLSTOP || t==OP_SELLLIMIT) pendingSell++;
      }
-   HudSetText(HUD_PREFIX + "str_T1", IntegerToString(statTrades[9]), UiAccent());
-   HudSetText(HUD_PREFIX + "str_T2", DoubleToString(winRate, 1), UiAccent());
-   HudSetText(HUD_PREFIX + "str_T3", (statClosed[9] >= 0.0 ? "+" : "") + DoubleToString(statClosed[9], 2), (statClosed[9] >= 0.0) ? UiGood() : UiBad());
-   HudSetText(HUD_PREFIX + "str_T4", DoubleToString(strategyLots, 2), UiAccent());
-   HudSetText(HUD_PREFIX + "str_eV", (statPerTrade[9] >= 0.0 ? "+" : "") + DoubleToString(statPerTrade[9], 2), (statPerTrade[9] >= 0.0) ? UiGood() : UiBad());
-   int ah = (int)g_avgHoldSec;
-   HudSetText(HUD_PREFIX + "str_hV", StringFormat("%dh %02dm", ah / 3600, (ah % 3600) / 60), UiInk());
-   HudSetText(HUD_PREFIX + "str_kV", IntegerToString(g_streak) + " | " + IntegerToString(g_salvage) + " / " + IntegerToString(g_cuts), UiInk());
-
-   for(int sx=1;sx<=9;sx++)
-     {
-      string sn=IntegerToString(sx);
-      double strategyPL = statClosed[sx] + statOpenPL[sx];
-      string sv=(sx==9)?(IntegerToString(statTrades[sx]+statOpenTrades[sx])+" / "+DoubleToString(winRate,1)+"% / "+(strategyPL>=0.0?"+":"")+DoubleToString(strategyPL,2)):"- / - / -";
-      HudSetText(HUD_PREFIX+"str_S"+sn+"_3",sv,(sx==9)?((strategyPL>=0.0)?UiGood():UiBad()):UiInk());
-      ObjectSetString(0,HUD_PREFIX+"str_S"+sn+"_3",OBJPROP_TOOLTIP,
-         "Trades: closed + open | Win rate: closed only | P/L: realized + floating");
-     }
-   HudSetText(HUD_PREFIX+"str_T3",IntegerToString(nTrades+openCount)+" / "+DoubleToString(winRate,1)+"% / "+(totalPL>=0.0?"+":"")+DoubleToString(totalPL,2),(totalPL>=0.0)?UiGood():UiBad());
-   ObjectSetString(0,HUD_PREFIX+"str_T3",OBJPROP_TOOLTIP,
-      "Trades: closed + open | Win rate: closed only | P/L: realized + floating");
+   string info[10];
+   info[0]=IntegerToString(buyCount)+" / "+IntegerToString(sellCount);
+   info[1]=IntegerToString(pendingBuy)+" / "+IntegerToString(pendingSell);
+   info[2]=DoubleToString(openLots,2);
+   info[3]=IntegerToString((int)MarketInfo(activeTradeSymbol,MODE_SPREAD));
+   info[4]=DoubleToString(g_currentDD,1)+"%";
+   info[5]=StringFormat("%dh %02dm",(int)g_avgHoldSec/3600,((int)g_avgHoldSec%3600)/60);
+   info[6]=IntegerToString(nTrades);
+   info[7]=DoubleToString(winRate,1)+"%";
+   info[8]=IntegerToString(statTrades[9]+statOpenTrades[9]);
+   info[9]=(totalPL>=0?"+":"")+DoubleToString(totalPL,2);
+   for(int ir=0;ir<10;ir++)
+      HudSetText(HUD_PREFIX+"str_infoV"+IntegerToString(ir),info[ir],
+         (ir==9)?((totalPL>=0)?UiGood():UiBad()):UiInk());
 
    if(showSpreadTag)
      {

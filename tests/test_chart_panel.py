@@ -31,7 +31,13 @@ class ChartPanelTests(unittest.TestCase):
 #include <sstream>
 using namespace std;
 using uint=unsigned int; using datetime=long long; using color=unsigned int;
-using ENUM_TIMEFRAMES=int;
+using ENUM_TIMEFRAMES=int; using ENUM_CHART_PROPERTY_INTEGER=int;
+const int CHART_COLOR_BACKGROUND=20,CHART_COLOR_FOREGROUND=21,CHART_COLOR_CHART_UP=22,
+CHART_COLOR_CHART_DOWN=23,CHART_COLOR_CANDLE_BULL=24,CHART_COLOR_CANDLE_BEAR=25,
+CHART_COLOR_CHART_LINE=26,CHART_COLOR_BID=27,CHART_COLOR_ASK=28,CHART_COLOR_STOP_LEVEL=29,
+CHART_COLOR_VOLUME=30,CHART_COLOR_GRID=31,CHART_SHOW_PRICE_SCALE=32,CHART_SHOW_DATE_SCALE=33,CHART_SHOW_OHLC=34;
+bool hideOriginalChart=true;
+color UiPanel(){return 0x1f262e;}
 #define RGB(r,g,b) ((r<<16)|(g<<8)|b)
 const color clrSilver=0xaaaaaa,clrWhite=0xffffff;
 const int OP_BUY=0,OP_SELL=1,OP_BUYLIMIT=2,OP_SELLLIMIT=3,OP_BUYSTOP=4,OP_SELLSTOP=5;
@@ -118,6 +124,9 @@ struct CCanvas {
         main = r'''
 bool contains(string s){for(auto t:g_pc.text)if(t.find(s)!=string::npos)return true;return false;}
 int main(){
+ assert(!g_pcFitOrders); // BARS is now the default.
+ g_pcFitOrders=true; // Exercise ALL scaling below as before.
+ chart[CHART_SHOW_PRICE_SCALE]=1;chart[CHART_COLOR_CHART_UP]=123;
  orders={{OP_BUY,"XAUUSD",123457,4180,4160,4200,1.5},
          {OP_SELLSTOP,"XAUUSD",123457,4155,4190,4140,0},
          {OP_BUYSTOP,"EURUSD",123457,1.1,0,0,0}};
@@ -140,6 +149,8 @@ int main(){
  assert(contains("+19.83"));assert(contains("-20.17"));assert(contains("Pending"));
  accountCurrency="EUR";PanelDraw(true);assert(contains("LIVE EUR"));accountCurrency="USD";
  assert(g_pcReady);assert(chart[1]==0 && chart[2]==0);
+ assert(chart[CHART_SHOW_PRICE_SCALE]==0);
+ assert(chart[CHART_COLOR_CHART_UP]==UiPanel());
  // The table is bottom-anchored; the removed footer adds 44 pixels to candles.
  int oldBottom=g_pcH-52-(36+4*20)-26;
  assert(g_pcBottom==oldBottom+44);
@@ -181,6 +192,7 @@ int main(){
  showLiveChartPanel=false;PanelDraw(true);assert(!g_pcReady);assert(relayouts>=2);
  showLiveChartPanel=true;g_pc.fail=true;PanelDraw(true);assert(!g_pcReady);assert(chart[1]==1);
  g_pc.fail=false;PanelDraw(true);PanelDestroy();assert(chart[1]==1&&chart[2]==1);
+ assert(chart[CHART_SHOW_PRICE_SCALE]==1);assert(chart[CHART_COLOR_CHART_UP]==123);
 }
 '''
         with tempfile.TemporaryDirectory() as tmp:
@@ -188,6 +200,19 @@ int main(){
             (path/'test.cpp').write_text(stub+panel+main)
             subprocess.run(['g++','-std=c++17',str(path/'test.cpp'),'-o',str(path/'test')],check=True)
             subprocess.run([str(path/'test')],check=True)
+
+    def test_startup_and_strategy_layout(self):
+        self.assertIn('chartStartFitOrders  = false', SOURCE)
+        self.assertIn('g_pcFitOrders=chartStartFitOrders;', SOURCE)
+        self.assertIn('MathMin(240,chartStartBars)', SOURCE)
+        self.assertIn('MathMax(0,chartStartOffset)', SOURCE)
+        self.assertNotIn('"str_S"', SOURCE)
+        self.assertIn('"PENDING BUY / SELL"', SOURCE)
+        self.assertIn('g_py[4]=g_py[1]+g_ph[1]+8;', SOURCE)
+        for height in (640, 700, 900):
+            strategy_height = max(210, height - 409)
+            equity_bottom = 96 + strategy_height + 8 + 145
+            self.assertEqual(equity_bottom, height - 152 - 8)
 
     def test_result_marker_arrays_initialized(self):
         panel = SOURCE.split('//=== Broker-data chart panel')[1].split('double SymbolAsk()')[0]
