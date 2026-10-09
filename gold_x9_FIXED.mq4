@@ -20,7 +20,7 @@
 //+------------------------------------------------------------------+
 #property copyright   "Mr. CapFree"
 #property link        "https://example.com"
-#property version     "6.600"   // Broker-data chart panel + carryover performance
+#property version     "6.610"   // Broker-data chart panel + carryover performance
 #property description "gold x9 MQL4 + LAB M1-M4 + live broker-data chart panel"
 #property strict
 #include <Canvas\Canvas.mqh>
@@ -446,9 +446,58 @@ ENUM_CHART_PROPERTY_INTEGER g_pcProps[15]={CHART_COLOR_BACKGROUND,CHART_COLOR_FO
 long g_pcPropValues[15];
 bool g_pcAppearanceSaved=false;
 
+// Hide non-dashboard objects without deleting the user's drawings.
+string g_pcHiddenObjects[];
+long g_pcHiddenMasks[];
+uint g_pcLastObjectScan=0;
+
+void PanelHideNativeObjects()
+  {
+   uint now=GetTickCount();
+   if(g_pcLastObjectScan!=0 && now-g_pcLastObjectScan<500) return;
+   g_pcLastObjectScan=now;
+   // Discard records for objects their owner has deleted.
+   for(int k=ArraySize(g_pcHiddenObjects)-1;k>=0;k--)
+     {
+      if(ObjectFind(0,g_pcHiddenObjects[k])>=0) continue;
+      int last=ArraySize(g_pcHiddenObjects)-1;
+      g_pcHiddenObjects[k]=g_pcHiddenObjects[last];
+      g_pcHiddenMasks[k]=g_pcHiddenMasks[last];
+      ArrayResize(g_pcHiddenObjects,last); ArrayResize(g_pcHiddenMasks,last);
+     }
+   for(int i=ObjectsTotal(0,0,-1)-1;i>=0;i--)
+     {
+      string name=ObjectName(0,i,0,-1);
+      if(name==PC_NAME || StringFind(name,PC_BUTTON)==0 || StringFind(name,HUD_PREFIX)==0) continue;
+      int found=-1;
+      for(int j=0;j<ArraySize(g_pcHiddenObjects);j++)
+         if(g_pcHiddenObjects[j]==name) { found=j; break; }
+      if(found<0)
+        {
+         int n=ArraySize(g_pcHiddenObjects);
+         if(ArrayResize(g_pcHiddenMasks,n+1)!=n+1) continue;
+         if(ArrayResize(g_pcHiddenObjects,n+1)!=n+1) { ArrayResize(g_pcHiddenMasks,n); continue; }
+         g_pcHiddenObjects[n]=name;
+         g_pcHiddenMasks[n]=ObjectGetInteger(0,name,OBJPROP_TIMEFRAMES);
+        }
+      ObjectSetInteger(0,name,OBJPROP_TIMEFRAMES,OBJ_NO_PERIODS);
+     }
+  }
+
+void PanelRestoreNativeObjects()
+  {
+   for(int i=0;i<ArraySize(g_pcHiddenObjects);i++)
+      if(ObjectFind(0,g_pcHiddenObjects[i])>=0)
+         ObjectSetInteger(0,g_pcHiddenObjects[i],OBJPROP_TIMEFRAMES,g_pcHiddenMasks[i]);
+   ArrayResize(g_pcHiddenObjects,0); ArrayResize(g_pcHiddenMasks,0);
+   g_pcLastObjectScan=0;
+  }
+
 void PanelHideNative()
   {
    if(!g_pcReady || !hideOriginalChart) return;
+   PanelHideNativeObjects();
+   ChartSetInteger(0,CHART_SHOW_TRADE_LEVELS,false);
    if(!g_pcAppearanceSaved)
      {
       for(int i=0;i<15;i++) g_pcPropValues[i]=ChartGetInteger(0,g_pcProps[i]);
@@ -460,6 +509,7 @@ void PanelHideNative()
 
 void PanelRestore()
   {
+   PanelRestoreNativeObjects();
    if(g_pcAppearanceSaved)
      {
       for(int i=0;i<15;i++) ChartSetInteger(0,g_pcProps[i],g_pcPropValues[i]);
@@ -1779,7 +1829,7 @@ int OnInit()
    PanelDraw(true);
    if(PanelEnabled()) EventSetTimer(1);
 
-   Print("gold_x9 v6.60 (MQL4) initialised on ", activeTradeSymbol, " digits=", activeSymbolDigits, " point=", DoubleToString(activeSymbolPoint, activeSymbolDigits), " tags=", (drawResultTags ? "on" : "off"), " hud=", (showDashboardPanel ? "on" : "off"));
+   Print("gold_x9 v6.61 (MQL4) initialised on ", activeTradeSymbol, " digits=", activeSymbolDigits, " point=", DoubleToString(activeSymbolPoint, activeSymbolDigits), " tags=", (drawResultTags ? "on" : "off"), " hud=", (showDashboardPanel ? "on" : "off"));
    return(INIT_SUCCEEDED);
   }
 
@@ -1795,7 +1845,10 @@ void OnDeinit(const int reason)
 
 void OnTimer()
   {
-   // Display-only refresh: no order-management calls from the timer.
+   // Refresh counts even if an order changes between market ticks.
+   // Display only: no order-management calls from the timer.
+   HudTick(false);
+   TagScan(false);
    PanelDraw(false);
   }
 
@@ -2477,7 +2530,7 @@ void HudCreate()
    for(int aw=0;aw<4;aw++) HudLabelObj(HUD_PREFIX+"acc_W"+IntegerToString(aw),0,0,39+(aw+5)*30,"-",ink,13,true,true);
 
    string infoLabels[10];
-   infoLabels[0]="OPEN BUY / SELL"; infoLabels[1]="PENDING BUY / SELL";
+   infoLabels[0]="OPEN TOTAL (B/S)"; infoLabels[1]="PENDING TOTAL (B/S)";
    infoLabels[2]="OPEN LOTS"; infoLabels[3]="SPREAD (POINTS)";
    infoLabels[4]="DAILY DD"; infoLabels[5]="AVG HOLD (CLOSED)";
    infoLabels[6]="CLOSED TRADES"; infoLabels[7]="WIN RATE (CLOSED)";
@@ -2702,13 +2755,19 @@ void HudTick(bool force)
    // SelectOwnPosition here: that strict selector is for trade management.
    g_openPL = 0.0;
    int openCount = 0;
+   int buyCount=0,sellCount=0,pendingBuy=0,pendingSell=0;
    ArrayInitialize(statOpenTrades, 0);
    ArrayInitialize(statOpenPL, 0.0);
    double openLots = 0.0, openPips = 0.0, openProfit = 0.0, openComm = 0.0, openSwap = 0.0;
    for(int i = OrdersTotal() - 1; i >= 0; i--)
      {
       if(!OrderSelect(i, SELECT_BY_POS, MODE_TRADES)) continue;
-      if(!IsMatchingOrder() || OrderCloseTime() != 0) continue;
+      if(OrderCloseTime()!=0 || !IsMatchingOrderIdentity()) continue;
+      int liveType=OrderType();
+      if(liveType==OP_BUYSTOP || liveType==OP_BUYLIMIT) { pendingBuy++; continue; }
+      if(liveType==OP_SELLSTOP || liveType==OP_SELLLIMIT) { pendingSell++; continue; }
+      if(liveType!=OP_BUY && liveType!=OP_SELL) continue;
+      if(liveType==OP_BUY) buyCount++; else sellCount++;
       // Triggered stops are now OP_BUY/OP_SELL, regardless of placement day.
       int sid = ParseSid(OrderComment());
       openCount++;
@@ -2781,20 +2840,9 @@ void HudTick(bool force)
       ObjectSetInteger(0, HUD_PREFIX + "acc_bar", OBJPROP_BGCOLOR, (g_currentDD >= maxAllowedDrawdownPct) ? UiBad() : UiGood());
      }
 
-   int buyCount=0,sellCount=0,pendingBuy=0,pendingSell=0;
-   for(int q=0;q<OrdersTotal();q++)
-     {
-      if(!OrderSelect(q,SELECT_BY_POS,MODE_TRADES)) continue;
-      if(OrderCloseTime()!=0 || !IsMatchingOrderIdentity()) continue;
-      int t=OrderType();
-      if(t==OP_BUY) buyCount++;
-      if(t==OP_SELL) sellCount++;
-      if(t==OP_BUYSTOP || t==OP_BUYLIMIT) pendingBuy++;
-      if(t==OP_SELLSTOP || t==OP_SELLLIMIT) pendingSell++;
-     }
    string info[10];
-   info[0]=IntegerToString(buyCount)+" / "+IntegerToString(sellCount);
-   info[1]=IntegerToString(pendingBuy)+" / "+IntegerToString(pendingSell);
+   info[0]=IntegerToString(openCount)+" (B"+IntegerToString(buyCount)+" S"+IntegerToString(sellCount)+")";
+   info[1]=IntegerToString(pendingBuy+pendingSell)+" (B"+IntegerToString(pendingBuy)+" S"+IntegerToString(pendingSell)+")";
    info[2]=DoubleToString(openLots,2);
    info[3]=IntegerToString((int)MarketInfo(activeTradeSymbol,MODE_SPREAD));
    info[4]=DoubleToString(g_currentDD,1)+"%";

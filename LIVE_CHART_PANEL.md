@@ -1,4 +1,4 @@
-# Live broker-data chart panel — v6.600
+# Live broker-data chart panel — v6.610
 
 ## Install
 
@@ -83,3 +83,17 @@ The unused S1–S8 rows are replaced with open BUY/SELL counts, pending BUY/SELL
 On normal-sized windows the strategy panel stretches with the available height, and the equity panel sits immediately below it, eight pixels above TRADE TRACKER. The existing small-window HUD minimum-size limitations still apply.
 
 Demo checks: start with different bar counts/offsets, confirm BARS is the default, switch themes and resize, check native axes/candles are hidden while the custom axis remains visible, and detach/disable the custom panel to verify the native chart returns. Automated tests check the startup source wiring, native hide/restore behavior, replacement rows and normal-height layout geometry; full MetaEditor/MT4 testing is still required.
+
+
+## v6.610 — native object cleanup and unambiguous counts
+
+When `hideOriginalChart` is enabled and the custom chart is active, non-dashboard objects on the main native chart (old result boxes, lines, arrows and other drawings) have their timeframe visibility masks temporarily disabled. New objects are checked every half second. HUD/canvas/control objects remain visible. Original masks are restored on fallback or removal; user drawings are not permanently deleted. Current-EA native result tags continue to be replaced by the custom result markers as before.
+
+STRATEGY / LIVE now displays explicit totals, for example:
+
+- `OPEN TOTAL (B/S)` → `4 (B1 S3)` = four positions: one BUY, three SELL.
+- `PENDING TOTAL (B/S)` → `13 (B3 S10)` = thirteen pending orders: three buys, ten sells. This is **not** a used/maximum limit.
+
+Position totals, direction breakdowns, pending counts and floating P/L now come from one scan of the live order pool. Both stop and limit pending orders count. The same symbol/magic/comment reporting filter is retained; no other symbols are silently mixed in and management ownership is unchanged. The display timer refreshes statistics between ticks as well.
+
+Regression scenarios include four positions plus thirteen mixed stop/limit pending orders, a pending order triggering into a market position, preservation of HUD objects, hiding newly-created native lines, and restoration of original drawing visibility masks. Compile and verify against the MT4 Trade tab on a demo account; these tests use terminal stubs rather than native MT4.

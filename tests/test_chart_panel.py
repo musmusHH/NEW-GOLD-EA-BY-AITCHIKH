@@ -21,6 +21,8 @@ class ChartPanelTests(unittest.TestCase):
         panel = panel.replace('#define PC_BUTTON "GX9PC_btn_"', 'const string PC_BUTTON="GX9PC_btn_";')
         panel = panel.replace('text+=" "+', 'text+=string(" ")+')
         panel = panel.replace('int tickets[];', 'vector<int> tickets;')
+        panel = panel.replace('string g_pcHiddenObjects[];', 'vector<string> g_pcHiddenObjects;')
+        panel = panel.replace('long g_pcHiddenMasks[];', 'vector<long> g_pcHiddenMasks;')
         stub = r'''
 #include <string>
 #include <vector>
@@ -47,7 +49,8 @@ const int OBJPROP_XSIZE=3,OBJPROP_YSIZE=4,OBJPROP_BGCOLOR=5,OBJPROP_COLOR=6,OBJP
 const int OBJPROP_FONTSIZE=8,OBJPROP_HIDDEN=9,OBJPROP_SELECTABLE=10,OBJPROP_ZORDER=11,OBJPROP_STATE=12;
 const int OBJPROP_TEXT=13,OBJPROP_BACK=14,OBJPROP_TOOLTIP=15,COLOR_FORMAT_ARGB_NORMALIZE=0;
 const int SELECT_BY_TICKET=1,SELECT_BY_POS=0,MODE_TRADES=0,TIME_DATE=1,TIME_MINUTES=2,TIME_SECONDS=4;
-const string TAG_PREFIX="GX9T_";
+const string TAG_PREFIX="GX9T_",HUD_PREFIX="GX9H_";
+const int OBJPROP_TIMEFRAMES=50,OBJ_NO_PERIODS=0;
 const int TAG_MAX=512;
 int g_tagN=0; datetime g_tagTime[TAG_MAX]; double g_tagPrice[TAG_MAX],g_tagProfit[TAG_MAX]; color g_tagClr[TAG_MAX];
 bool showDashboardPanel=true,showLiveChartPanel=true,drawResultTags=true,quoteOK=true;
@@ -55,6 +58,7 @@ string activeTradeSymbol="XAUUSD"; int activeSymbolDigits=2;
 double activeSymbolPoint=0.01; int g_px[6]={1},g_pw[6]={280};
 map<int,long> chart={{1,1},{2,1},{3,1366},{4,700}};
 map<string,string> objects;
+map<string,long> masks;
 uint clockMs=1000; datetime latest=100000;
 int barsAvailable=500,relayouts=0;
 uint GetTickCount(){return clockMs;}
@@ -64,7 +68,10 @@ void ChartSetInteger(int,int p,long v){chart[p]=v;}
 void ChartRedraw(int){}
 int ObjectFind(int,string n){return objects.count(n)?0:-1;}
 bool ObjectCreate(int,string n,int,int,int,int){objects[n]="";return true;}
-void ObjectSetInteger(int,string,int,long){}
+void ObjectSetInteger(int,string name,int prop,long value){if(prop==OBJPROP_TIMEFRAMES)masks[name]=value;}
+long ObjectGetInteger(int,string name,int){return masks[name];}
+int ObjectsTotal(int,int,int){return objects.size();}
+string ObjectName(int,int index,int,int){auto it=objects.begin();advance(it,index);return it->first;}
 void ObjectSetString(int,string n,int,string s){objects[n]=s;}
 void ObjectsDeleteAll(int,string prefix){for(auto i=objects.begin();i!=objects.end();) if(i->first.find(prefix)==0)i=objects.erase(i);else ++i;}
 int GetLastError(){return 0;} void Print(string,int){}
@@ -124,6 +131,9 @@ struct CCanvas {
         main = r'''
 bool contains(string s){for(auto t:g_pc.text)if(t.find(s)!=string::npos)return true;return false;}
 int main(){
+ objects["old_result_box"]="";masks["old_result_box"]=63;
+ objects["manual_line"]="";masks["manual_line"]=7;
+ objects[HUD_PREFIX+"title"]="";masks[HUD_PREFIX+"title"]=511;
  assert(!g_pcFitOrders); // BARS is now the default.
  g_pcFitOrders=true; // Exercise ALL scaling below as before.
  chart[CHART_SHOW_PRICE_SCALE]=1;chart[CHART_COLOR_CHART_UP]=123;
@@ -149,6 +159,10 @@ int main(){
  assert(contains("+19.83"));assert(contains("-20.17"));assert(contains("Pending"));
  accountCurrency="EUR";PanelDraw(true);assert(contains("LIVE EUR"));accountCurrency="USD";
  assert(g_pcReady);assert(chart[1]==0 && chart[2]==0);
+ assert(masks["old_result_box"]==0&&masks["manual_line"]==0);
+ assert(masks[HUD_PREFIX+"title"]==511);
+ objects["new_line"]="";masks["new_line"]=15;clockMs+=600;PanelDraw(true);
+ assert(masks["new_line"]==0);
  assert(chart[CHART_SHOW_PRICE_SCALE]==0);
  assert(chart[CHART_COLOR_CHART_UP]==UiPanel());
  // The table is bottom-anchored; the removed footer adds 44 pixels to candles.
@@ -192,6 +206,7 @@ int main(){
  showLiveChartPanel=false;PanelDraw(true);assert(!g_pcReady);assert(relayouts>=2);
  showLiveChartPanel=true;g_pc.fail=true;PanelDraw(true);assert(!g_pcReady);assert(chart[1]==1);
  g_pc.fail=false;PanelDraw(true);PanelDestroy();assert(chart[1]==1&&chart[2]==1);
+ assert(masks["old_result_box"]==63&&masks["manual_line"]==7&&masks["new_line"]==15);
  assert(chart[CHART_SHOW_PRICE_SCALE]==1);assert(chart[CHART_COLOR_CHART_UP]==123);
 }
 '''
@@ -207,7 +222,7 @@ int main(){
         self.assertIn('MathMin(240,chartStartBars)', SOURCE)
         self.assertIn('MathMax(0,chartStartOffset)', SOURCE)
         self.assertNotIn('"str_S"', SOURCE)
-        self.assertIn('"PENDING BUY / SELL"', SOURCE)
+        self.assertIn('"PENDING TOTAL (B/S)"', SOURCE)
         self.assertIn('g_py[4]=g_py[1]+g_ph[1]+8;', SOURCE)
         for height in (640, 700, 900):
             strategy_height = max(210, height - 409)

@@ -19,7 +19,7 @@ class LiveReportingTest(unittest.TestCase):
 #include <cassert>
 #include <cmath>
 using namespace std;
-const int OP_BUY=0, OP_SELL=1, OP_BUYSTOP=4, OP_SELLSTOP=5;
+const int OP_BUY=0, OP_SELL=1, OP_BUYLIMIT=2, OP_SELLLIMIT=3, OP_BUYSTOP=4, OP_SELLSTOP=5;
 const int SELECT_BY_POS=0, MODE_TRADES=0;
 const int MATCH_MAGIC_OR_COMMENT=0, MATCH_MAGIC_ONLY=1, MATCH_COMMENT_ONLY=2, MATCH_ALL_SYMBOL=3;
 int filterMatchMode=0, activeMagicNumber=123457;
@@ -45,6 +45,7 @@ double CommissionCost(double lots){return lots*7;}
 int StringFind(string a,string b){auto i=a.find(b);return i==string::npos?-1:int(i);}
 string IntegerToString(int n){return to_string(n);}
 template<class T, size_t N, class V> void ArrayInitialize(T (&a)[N],V v){for(auto &x:a)x=v;}
+int reportedOpen=0,reportedBuys=0,reportedSells=0,reportedPendingBuy=0,reportedPendingSell=0;
 int statOpenTrades[10]; double statOpenPL[10],g_openPL,activePipFactor=0.1;
 '''
         main = r'''
@@ -64,11 +65,19 @@ int main(){
  orders.erase(orders.begin()); // closed ticket leaves the live pool
  report(); assert(statOpenTrades[9]==1); assert(abs(g_openPL-15)<1e-9);
  orders.clear(); report(); assert(statOpenTrades[9]==0); assert(g_openPL==0);
+ // Four actual positions, thirteen pending orders: never display 3/10 as a limit.
+ orders.push_back({OP_BUY,123457,"XAUUSD","broker",1,0,0.01});
+ for(int i=0;i<3;i++)orders.push_back({OP_SELL,123457,"XAUUSD","broker",1,0,0.01});
+ for(int i=0;i<3;i++)orders.push_back({i%2?OP_BUYLIMIT:OP_BUYSTOP,123457,"XAUUSD","broker",0,0,0.01});
+ for(int i=0;i<10;i++)orders.push_back({i%2?OP_SELLLIMIT:OP_SELLSTOP,123457,"XAUUSD","broker",0,0,0.01});
+ report();assert(reportedOpen==4);assert(reportedBuys==1&&reportedSells==3);
+ assert(reportedPendingBuy==3&&reportedPendingSell==10);
+ orders[4].type=OP_BUY; report();assert(reportedOpen==5);assert(reportedPendingBuy==2);
 }
 '''
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp)
-            (path/'test.cpp').write_text(stub+helpers+'void report(){\n'+loop+'}\n'+main)
+            (path/'test.cpp').write_text(stub+helpers+'void report(){\n'+loop+'reportedOpen=openCount;reportedBuys=buyCount;reportedSells=sellCount;reportedPendingBuy=pendingBuy;reportedPendingSell=pendingSell;}\n'+main)
             subprocess.run(['g++','-std=c++17',str(path/'test.cpp'),'-o',str(path/'test')],check=True)
             subprocess.run([str(path/'test')],check=True)
 
@@ -78,6 +87,8 @@ int main(){
                         if 'HudSetText(' in line and '"' + name + '"' in line)
             self.assertIn('IntegerToString(openCount)', line)
             self.assertNotIn('countOwnPositions()', line)
+        self.assertIn('info[0]=IntegerToString(openCount)', SOURCE)
+        self.assertIn('info[1]=IntegerToString(pendingBuy+pendingSell)', SOURCE)
         self.assertIn('if(countOwnPositions() >= activeMaxPositions) return;', SOURCE)
         mq4 = Path(__file__).resolve().parents[1] / 'gold_x9_FIXED.mq4'
         self.assertEqual(mq4.read_text(), SOURCE)
