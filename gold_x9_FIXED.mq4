@@ -20,7 +20,7 @@
 //+------------------------------------------------------------------+
 #property copyright   "Mr. CapFree"
 #property link        "https://example.com"
-#property version     "6.630"   // Broker-data chart panel + carryover performance
+#property version     "6.640"   // Broker-data chart panel + carryover performance
 #property description "gold x9 MQL4 + LAB M1-M4 + live broker-data chart panel"
 #property strict
 #include <Canvas\Canvas.mqh>
@@ -612,6 +612,52 @@ string PanelExitMoney(double exitPrice)
    return (net>=0?"+":"")+DoubleToString(net,2);
   }
 
+// Session-local evidence of a successful trailing modification, not just an SL.
+struct PanelTrailState
+  {
+   int ticket;
+   double stop;
+  };
+PanelTrailState g_panelTrails[];
+
+void PanelRememberTrail(int ticket,double stop)
+  {
+   if(ticket<=0 || stop<=0) return;
+   int n=ArraySize(g_panelTrails);
+   for(int i=0;i<n;i++)
+      if(g_panelTrails[i].ticket==ticket) { g_panelTrails[i].stop=stop; return; }
+   if(ArrayResize(g_panelTrails,n+1)!=n+1) return;
+   g_panelTrails[n].ticket=ticket; g_panelTrails[n].stop=stop;
+  }
+
+void PanelPruneTrails()
+  {
+   for(int i=ArraySize(g_panelTrails)-1;i>=0;i--)
+     {
+      bool closed=!OrderSelect(g_panelTrails[i].ticket,SELECT_BY_TICKET,MODE_TRADES);
+      if(!closed) closed=(OrderCloseTime()!=0);
+      if(!closed) continue;
+      int last=ArraySize(g_panelTrails)-1;
+      g_panelTrails[i]=g_panelTrails[last];
+      ArrayResize(g_panelTrails,last);
+     }
+  }
+
+string PanelTrailMoney()
+  {
+   if(OrderType()!=OP_BUY && OrderType()!=OP_SELL) return "-";
+   double stop=OrderStopLoss();
+   if(stop<=0) return "-";
+   for(int i=0;i<ArraySize(g_panelTrails);i++)
+      if(g_panelTrails[i].ticket==OrderTicket())
+        {
+         // A manual/BE adjustment or removed SL must not be labelled as trailing.
+         if(MathAbs(g_panelTrails[i].stop-stop)>activeSymbolPoint*0.5) return "-";
+         return "ON "+PanelExitMoney(stop);
+        }
+   return "-";
+  }
+
 string PanelLiveMoney()
   {
    if(OrderType()!=OP_BUY && OrderType()!=OP_SELL) return "Pending";
@@ -632,6 +678,7 @@ void PanelCell(int x,int y,int width,string text,color ink)
 
 void PanelTradeTable()
   {
+   PanelPruneTrails();
    int tickets[];
    int pendingTickets[];
    for(int i=0;i<OrdersTotal();i++)
@@ -670,17 +717,18 @@ void PanelTradeTable()
    PanelCell(12,tableTop+2,g_pcW-120,title,C'58,181,255');
    string section="PAGE "+IntegerToString(g_pcTradePage+1)+"/"+IntegerToString(pages);
    PanelText(g_pcW-100,tableTop+2,section,clrSilver);
-   int cols[6];
+   int cols[7];
    cols[0]=12;
-   cols[1]=12+(g_pcW-24)*22/100;
-   cols[2]=12+(g_pcW-24)*44/100;
-   cols[3]=12+(g_pcW-24)*63/100;
-   cols[4]=12+(g_pcW-24)*82/100;
-   cols[5]=g_pcW-12;
-   string heads[5];
+   cols[1]=12+(g_pcW-24)*18/100;
+   cols[2]=12+(g_pcW-24)*36/100;
+   cols[3]=12+(g_pcW-24)*51/100;
+   cols[4]=12+(g_pcW-24)*66/100;
+   cols[5]=12+(g_pcW-24)*81/100;
+   cols[6]=g_pcW-12;
+   string heads[6];
    heads[0]="TICKET"; heads[1]="TYPE"; heads[2]="LIVE "+unit;
-   heads[3]="TP~ "+unit; heads[4]="SL~ "+unit;
-   for(int h=0;h<5;h++) PanelCell(cols[h],tableTop+18,cols[h+1]-cols[h],heads[h],clrSilver);
+   heads[3]="TP~ "+unit; heads[4]="SL~ "+unit; heads[5]="TRAIL "+unit;
+   for(int h=0;h<6;h++) PanelCell(cols[h],tableTop+18,cols[h+1]-cols[h],heads[h],clrSilver);
    if(ArraySize(tickets)+ArraySize(pendingTickets)==0) PanelText(12,tableTop+36,"No matching trades",clrSilver);
    for(int row=0;row<pageRows;row++)
      {
@@ -690,14 +738,17 @@ void PanelTradeTable()
       if(index<ArraySize(tickets)) ticket=tickets[index];
       else ticket=pendingTickets[index-ArraySize(tickets)];
       if(!OrderSelect(ticket,SELECT_BY_TICKET,MODE_TRADES) || OrderCloseTime()!=0) continue;
-      string values[5];
+      string values[6];
       values[0]=IntegerToString(OrderTicket()); values[1]=PanelOrderName(OrderType());
       values[2]=PanelLiveMoney(); values[3]=PanelExitMoney(OrderTakeProfit()); values[4]=PanelExitMoney(OrderStopLoss());
-      for(int c=0;c<5;c++)
+      values[5]=PanelTrailMoney();
+      for(int c=0;c<6;c++)
         {
          color ink=clrSilver;
          if(c>=2 && StringFind(values[c],"+")==0) ink=C'49,214,154';
          if(c>=2 && StringFind(values[c],"-")==0) ink=C'245,100,100';
+         if(c==5 && StringFind(values[c],"ON +")==0) ink=C'49,214,154';
+         if(c==5 && StringFind(values[c],"ON -")==0) ink=C'245,100,100';
          PanelCell(cols[c],tableTop+36+row*20,cols[c+1]-cols[c],values[c],ink);
         }
      }
@@ -804,7 +855,7 @@ void PanelDraw(bool force)
       double net=OrderProfit()+OrderSwap()-CommissionCost(OrderLots());
       string ticket="#"+IntegerToString(OrderTicket());
       string text=ticket+" "+PanelOrderName(type)+" "+DoubleToString(OrderLots(),2);
-      text+=" LIVE "+PanelLiveMoney();
+      text+=" LIVE "+PanelLiveMoney()+" TRAIL "+PanelTrailMoney();
       color ink=market ? (net>=0 ? C'49,214,154' : C'245,100,100') : C'240,178,65';
       PanelAddLevel(levels,OrderOpenPrice(),text,ink);
       PanelAddLevel(levels,OrderStopLoss(),ticket+" SL~ "+PanelExitMoney(OrderStopLoss()),C'245,100,100');
@@ -1851,7 +1902,7 @@ int OnInit()
    PanelDraw(true);
    if(PanelEnabled()) EventSetTimer(1);
 
-   Print("gold_x9 v6.63 (MQL4) initialised on ", activeTradeSymbol, " digits=", activeSymbolDigits, " point=", DoubleToString(activeSymbolPoint, activeSymbolDigits), " tags=", (drawResultTags ? "on" : "off"), " hud=", (showDashboardPanel ? "on" : "off"));
+   Print("gold_x9 v6.64 (MQL4) initialised on ", activeTradeSymbol, " digits=", activeSymbolDigits, " point=", DoubleToString(activeSymbolPoint, activeSymbolDigits), " tags=", (drawResultTags ? "on" : "off"), " hud=", (showDashboardPanel ? "on" : "off"));
    return(INIT_SUCCEEDED);
   }
 
@@ -2186,6 +2237,7 @@ void manageOpenPositions()
       double newSL = curSL;
       double newTP = curTP;
       bool   changed = false;
+      bool   trailChanged = false;
 
       if(enableAgedLossCut)
         {
@@ -2238,8 +2290,8 @@ void manageOpenPositions()
          double trSL = isBuy ? exitPrice - trDistance : exitPrice + trDistance;
          trSL = NormalizeDouble(trSL, activeSymbolDigits);
 
-         if(isBuy  && trSL > newSL) { newSL = trSL; changed = true; }
-         if(!isBuy && (newSL <= 0.0 || trSL < newSL)) { newSL = trSL; changed = true; }
+         if(isBuy  && trSL > newSL) { newSL = trSL; changed = true; trailChanged = true; }
+         if(!isBuy && (newSL <= 0.0 || trSL < newSL)) { newSL = trSL; changed = true; trailChanged = true; }
         }
 
       double svTrigger = salvageTriggerPct + salvageAdjustment;
@@ -2294,6 +2346,10 @@ void manageOpenPositions()
         }
       else
         {
+         if(trailChanged && newSL>0 &&
+            ((isBuy && newSL>curSL+activeSymbolPoint*0.5) ||
+             (!isBuy && (curSL<=0 || newSL<curSL-activeSymbolPoint*0.5))))
+            PanelRememberTrail(selTicket,newSL);
          Print("gold_x9: position ", selTicket, " managed. fav=", DoubleToString(favorablePct, 3), "% loss=", DoubleToString(lossPct, 3), "% SL ", DoubleToString(curSL, activeSymbolDigits), " -> ", DoubleToString(newSL, activeSymbolDigits), " TP ", DoubleToString(curTP, activeSymbolDigits), " -> ", DoubleToString(newTP, activeSymbolDigits));
         }
 

@@ -24,6 +24,7 @@ class ChartPanelTests(unittest.TestCase):
         panel = panel.replace('int pendingTickets[];', 'vector<int> pendingTickets;')
         panel = panel.replace('string g_pcHiddenObjects[];', 'vector<string> g_pcHiddenObjects;')
         panel = panel.replace('long g_pcHiddenMasks[];', 'vector<long> g_pcHiddenMasks;')
+        panel = panel.replace('PanelTrailState g_panelTrails[];', 'vector<PanelTrailState> g_panelTrails;')
         stub = r'''
 #include <string>
 #include <vector>
@@ -156,7 +157,17 @@ int main(){
  selected.type=OP_SELLSTOP;assert(PanelExitMoney(4160)=="+19.83");
  mockTickValue=0;assert(PanelExitMoney(4200)=="N/A");mockTickValue=1;
  mockTickSize=0;assert(PanelExitMoney(4200)=="N/A");mockTickSize=0.01;
- PanelDraw(true);
+ selected=orders[0];assert(PanelTrailMoney()=="-");
+ PanelRememberTrail(OrderTicket(),4160);assert(PanelTrailMoney()=="ON -20.17");
+ orders[0].sl=4182;selected=orders[0];assert(PanelTrailMoney()=="-");
+ PanelRememberTrail(OrderTicket(),4182);assert(PanelTrailMoney()=="ON +1.83");
+ PanelDraw(true);assert(contains("TRAIL $"));assert(contains("ON +1.83"));
+ selected=orders[1];PanelRememberTrail(OrderTicket(),4190);assert(PanelTrailMoney()=="-");
+ selected=orders[0];selected.type=OP_SELL;selected.sl=4178;
+ PanelRememberTrail(OrderTicket(),4178);assert(PanelTrailMoney()=="ON +1.83");
+ selected.sl=0;assert(PanelTrailMoney()=="-");
+ mockTickValue=0;selected=orders[0];assert(PanelTrailMoney()=="ON N/A");mockTickValue=1;
+ orders[0].sl=4160;PanelDraw(true);assert(!contains("ON +1.83"));
  assert(contains("LIVE $"));assert(contains("TP~ $"));assert(contains("SL~ $"));
  assert(contains("+19.83"));assert(contains("-20.17"));assert(contains("Pending"));assert(contains("PAGE 1/1"));
  accountCurrency="EUR";PanelDraw(true);assert(contains("LIVE EUR"));accountCurrency="USD";
@@ -207,7 +218,7 @@ int main(){
  // Pending-only and empty accounts must still have a usable first page.
  orders.resize(13);g_pcTradePage=0;PanelDraw(true);
  assert(contains("OPEN 0 | PENDING 13"));assert(contains("PAGE 1/2"));assert(contains("Pending"));
- orders.clear();g_pcTradePage=0;PanelDraw(true);assert(contains("No matching trades"));
+ orders.clear();g_pcTradePage=0;PanelDraw(true);assert(contains("No matching trades"));assert(g_panelTrails.empty());
  orders=savedOrders;clockMs+=300;
  chartTradeRows=4; // Keep the existing smaller-row pagination checks.
  // Dense levels must paginate without exceeding the canvas bounds.
@@ -253,6 +264,16 @@ int main(){
             strategy_height = max(210, height - 409)
             equity_bottom = 96 + strategy_height + 8 + 145
             self.assertEqual(equity_bottom, height - 152 - 8)
+
+    def test_trailing_recorded_only_after_modify_success(self):
+        management = SOURCE.split('void manageOpenPositions()\n  {')[1].split('void ApplyChartStyle()')[0]
+        self.assertIn('bool   trailChanged = false;', management)
+        self.assertIn('newSL = trSL; changed = true; trailChanged = true;', management)
+        modify = management.index('if(!OrderModify(')
+        success = management.index('else\n        {', modify)
+        record = management.index('PanelRememberTrail(selTicket,newSL);')
+        self.assertGreater(record, success)
+        self.assertIn('if(trailChanged && newSL>0', management[success:record])
 
     def test_result_marker_arrays_initialized(self):
         panel = SOURCE.split('//=== Broker-data chart panel')[1].split('double SymbolAsk()')[0]

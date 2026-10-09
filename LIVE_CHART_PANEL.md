@@ -1,4 +1,4 @@
-# Live broker-data chart panel — v6.630
+# Live broker-data chart panel — v6.640
 
 ## Install
 
@@ -115,3 +115,19 @@ TRADES now renders one list in this order: **all matching open BUY/SELL position
 `chartTradeRows` defaults to **8** and can be set from 1 to 40. The table uses fewer rows for a short list and caps its height to preserve at least 100 pixels of candle plot when enough space is available. More table rows leave less room for candles. If the list cannot fit, clicking the table advances through the remaining rows; the header shows `PAGE n/m`, plus separate OPEN and PENDING totals. LIVE returns to page one. Reporting filters and trading logic are unchanged.
 
 Tests verify the rendered ticket sequence with four newer open tickets and thirteen older pending tickets, not merely the totals. MetaEditor compilation and terminal verification are still required.
+
+
+## v6.640 — TRAIL cash column
+
+TRADES now includes a sixth column, **TRAIL $** (or the account's actual currency).
+
+- `ON +2.50` means this EA confirmed a successful trailing-stop change and the current SL is that recorded stop. The amount is the estimated net result at that stop, calculated from entry with current lots, tick value, accrued swap and the existing commission estimate.
+- `ON -1.20` is possible: trailing can tighten risk while the stop is still below breakeven. It is not a guarantee of protected profit.
+- `-` means no currently matching, confirmed trailing update is known. Pending orders, removed SLs and stops changed to another price do not display ON.
+- `ON N/A` means trailing was confirmed but broker tick metadata is unavailable for the money estimate.
+
+Confirmation is recorded only in the successful OrderModify branch when the trailing candidate actually tightens SL. Failed changes, TP-only edits and breakeven-only changes do not activate the indicator. Entry/exit/risk rules are unchanged; the new hook stores display metadata only.
+
+Tracking is session-local: after EA reload/restart, an existing SL is not guessed to be trailing. The column will show `-` until the next confirmed trailing change. Closed-ticket records are removed as the table refreshes. The amount updates with the position's current lot size and accrued swap.
+
+Eight automated tests pass, including BUY/SELL money signs, stop changes/removal, pending exclusion, missing tick data, closed-ticket cleanup and success-branch wiring. Full MetaEditor compilation and demo validation are still required. Check that a real successful trailing update changes the displayed column on the next display refresh.
