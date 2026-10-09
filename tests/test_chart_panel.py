@@ -77,6 +77,7 @@ int Period(){return 5;}
 template<class T> int ArraySize(vector<T>& v){return v.size();}
 template<class T> int ArrayResize(vector<T>& v,int n){v.resize(n);return n;}
 template<class T> void ArraySort(vector<T>& v){sort(v.begin(),v.end());}
+template<class T,size_t N> void ArrayInitialize(T (&a)[N],T value){for(auto &v:a)v=value;}
 template<class T> void ArraySetAsSeries(vector<T>&,bool){}
 struct MqlRates {datetime time;double open,high,low,close;};
 struct MqlTick {datetime time;double bid,ask;};
@@ -180,6 +181,13 @@ int main(){
             (path/'test.cpp').write_text(stub+panel+main)
             subprocess.run(['g++','-std=c++17',str(path/'test.cpp'),'-o',str(path/'test')],check=True)
             subprocess.run([str(path/'test')],check=True)
+
+    def test_result_marker_arrays_initialized(self):
+        panel = SOURCE.split('//=== Broker-data chart panel')[1].split('double SymbolAsk()')[0]
+        for name in ('lastX', 'lastY'):
+            initialization = panel.index('ArrayInitialize(' + name + ',0);')
+            first_read = panel.index(name + '[c]')
+            self.assertLess(initialization, first_read)
 
     def test_display_only_and_lifecycle(self):
         panel = SOURCE.split('//=== Broker-data chart panel')[1].split('double SymbolAsk()')[0]

@@ -747,6 +747,8 @@ void PanelDraw(bool force)
      }
    // A few time-anchored realized results from the existing tag cache.
    int marked=0; int lastX[4]; int lastY[4];
+   ArrayInitialize(lastX,0);
+   ArrayInitialize(lastY,0);
    if(drawResultTags)
       for(int k=g_tagN-1;k>=MathMax(0,g_tagN-TAG_MAX) && marked<4;k--)
         {
