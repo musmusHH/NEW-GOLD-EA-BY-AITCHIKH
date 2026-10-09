@@ -1,4 +1,4 @@
-# X9 Full Focus — design 4 / v6.740
+# X9 Full Focus — design 4 / v6.750
 
 Implements the selected **Graphite Full Focus** layout with four complete palettes:
 
@@ -101,3 +101,9 @@ Regression checks cover coincident labels, six distinct colors, grouping, overfl
 ### v6.740 cleanup
 
 Removed the diagonal label-to-price connectors that became visually tangled around clustered levels. Non-overlapping colored text, grouped counts, overflow indicators and exact horizontal price lines are unchanged.
+
+## Raised solid panels — v6.750
+
+All native HUD rectangles (header, summary cards, tracker and row bands) now use BORDER_RAISED, STYLE_SOLID and opaque fills. The candle panel, trade table and closed-equity dock receive two-pixel light/shadow bevels on their opaque canvas backgrounds. Colors follow the four themes, including a light-theme bevel. Geometry, price-level labels and horizontal order lines are unchanged; no diagonal label connectors or result boxes are restored.
+
+Regression coverage checks raised/solid/filled HUD rectangles across all themes and supported sizes; the bounded canvas tests exercise the new section borders during resizing. Native MT4 compilation and visual demo validation are still required.

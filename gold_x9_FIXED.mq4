@@ -14,7 +14,7 @@
 //+------------------------------------------------------------------+
 #property copyright   "Mr. CapFree"
 #property link        "https://example.com"
-#property version     "6.740"   // Broker-data chart panel + carryover performance
+#property version     "6.750"   // Broker-data chart panel + carryover performance
 #property description "gold X9 Full Focus design 4 + four themes + broker-data chart"
 #property strict
 #include <Canvas\Canvas.mqh>
@@ -586,6 +586,29 @@ bool PanelMouseMove(int x,int y,int buttons)
    return true;
   }
 
+// Opaque canvas sections use the same raised appearance as native HUD cards.
+void PanelRaisedFrame(int left,int top,int right,int bottom)
+  {
+   uint light=ColorToARGB(g_activeTheme==1?UiPanel():UiDim());
+   uint shadow=ColorToARGB(g_activeTheme==1?UiDim():UiChartBg());
+   for(int edge=0;edge<2;edge++)
+     {
+      g_pc.Line(left+edge,top+edge,right-edge,top+edge,light);
+      g_pc.Line(left+edge,top+edge,left+edge,bottom-edge,light);
+      g_pc.Line(left+edge,bottom-edge,right-edge,bottom-edge,shadow);
+      g_pc.Line(right-edge,top+edge,right-edge,bottom-edge,shadow);
+     }
+  }
+
+void PanelRaisedSections()
+  {
+   PanelRaisedFrame(1,1,g_pcW-2,g_pcBottom+22);
+   int top=g_pcH-PC_TABLE_BOTTOM_GAP-g_focusDockH;
+   PanelRaisedFrame(8,top,g_focusTableW-1,g_pcH-PC_TABLE_BOTTOM_GAP+1);
+   if(showEquityCurve)
+      PanelRaisedFrame(g_focusTableW+12,top,g_pcW-1,g_pcH-PC_TABLE_BOTTOM_GAP+1);
+  }
+
 void PanelAddLevel(PanelLevel &levels[],double price,string text,color ink,int kind)
   {
    if(price<=0) return;
@@ -915,6 +938,7 @@ void PanelDraw(bool force)
      {
       g_pcRenderedBars=0;
       PanelText(15,65,"Waiting for broker candle history...",UiDim());
+      PanelRaisedSections();
       g_pc.Update();EqDraw(); return;
      }
    g_pcRenderedBars=count;g_pcLastVisiblePrice=rates[0].close;
@@ -1017,6 +1041,7 @@ void PanelDraw(bool force)
    // Quote status and navigation help remain accessible on hover, not over the chart.
    string status=(g_pcOffset==0?"LIVE | ":"HISTORY | ")+feed;
    ObjectSetString(0,PC_NAME,OBJPROP_TOOLTIP,detail+"\n"+status+"\nClick the trade table for the next rows: all open positions first, then pending orders. LIVE returns to the beginning. Set chartTradeRows to change visible rows.");
+   PanelRaisedSections();
    g_pc.Update();
    EqDraw();
   }
@@ -1675,7 +1700,7 @@ int OnInit()
    PanelDraw(true);
    if(PanelEnabled()) EventSetTimer(1);
 
-   Print("gold_x9 v6.74 (MQL4) initialised on ", activeTradeSymbol, " digits=", activeSymbolDigits, " point=", DoubleToString(activeSymbolPoint, activeSymbolDigits), " result boxes=removed", " hud=", (showDashboardPanel ? "on" : "off"));
+   Print("gold_x9 v6.75 (MQL4) initialised on ", activeTradeSymbol, " digits=", activeSymbolDigits, " point=", DoubleToString(activeSymbolPoint, activeSymbolDigits), " result boxes=removed", " hud=", (showDashboardPanel ? "on" : "off"));
    return(INIT_SUCCEEDED);
   }
 
@@ -2198,8 +2223,9 @@ void HudRectObj(string name, int panel, int dx, int dy, int w, int h, color bgc,
    ObjectSetInteger(0, name, OBJPROP_XSIZE,       w);
    ObjectSetInteger(0, name, OBJPROP_YSIZE,       h);
    ObjectSetInteger(0, name, OBJPROP_BGCOLOR,     bgc);
-   ObjectSetInteger(0, name, OBJPROP_BORDER_TYPE, BORDER_FLAT);
+   ObjectSetInteger(0, name, OBJPROP_BORDER_TYPE, BORDER_RAISED);
    ObjectSetInteger(0, name, OBJPROP_COLOR,       bord);
+   ObjectSetInteger(0, name, OBJPROP_STYLE,       STYLE_SOLID);
    ObjectSetInteger(0, name, OBJPROP_FILL,        true);
    ObjectSetInteger(0, name, OBJPROP_SELECTABLE,  false);
    ObjectSetInteger(0, name, OBJPROP_HIDDEN,      true);

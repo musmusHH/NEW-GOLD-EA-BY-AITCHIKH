@@ -1,6 +1,6 @@
 # NEW GOLD EA BY AITCHIKH — X9 Full Focus
 
-Current source: **[gold_x9_FIXED.mq4](gold_x9_FIXED.mq4)** — v6.740.
+Current source: **[gold_x9_FIXED.mq4](gold_x9_FIXED.mq4)** — v6.750.
 
 Selected layout: **design 4 / Graphite Full Focus**, with a full-width real-price chart, open-first trade table, closed-result EMA/DD curve and independent TRADE TRACKER.
 
