@@ -1,4 +1,4 @@
-# X9 MT5 — Hedging port / v7.000
+# X9 MT5 — Hedging port / v7.001
 
 ## Status and scope
 
@@ -29,7 +29,7 @@ Included:
 3. Open it in **MetaEditor 5**, press **F7**, and inspect all compiler errors/warnings. If compilation fails, keep live trading disabled and supply the exact error text/line numbers for correction.
 4. No bridge include file needs to be installed: it is embedded in the `.mq5`. Only the standard current MT5 `Canvas/Canvas.mqh` is required. No GX9 BMPs or DLLs are required.
 5. Test the EA on the broker's actual gold symbol (including its suffix) and intended timeframe. Attach to a **hedging demo account**. MT5 Algo Trading / EA trading permissions must be enabled for orders.
-6. The Experts/Journal initialization line identifies **gold_x9 MT5 v7.000 (HEDGING)**.
+6. The Experts/Journal initialization line identifies **gold_x9 MT5 v7.001 (HEDGING)**.
 
 ## MT5-specific behavior
 
@@ -68,3 +68,7 @@ python -m unittest discover -s tests -v
 ```
 
 Python and g++ are required. The 16 tests include existing rendering/risk/reporting checks, generated-source consistency, strategy-body comparison after API renaming, and compiled C++ bridge stubs for large tickets, pending/position routing, entry attribution, partial/close-by history, failed snapshots, request retcodes, filling/expiry, ownership and account safety gates. **These are not a native MQL5 compiler or an MT5 execution simulator.**
+
+## v7.001 compile correction
+
+Namespaced all legacy market-property/pool constants with `X9_MODE_`, including `X9_MODE_SPREAD`, to avoid MT5's built-in `ENUM_SERIESMODE::MODE_SPREAD`. Regenerated the standalone file. The bridge test now declares that native enum to reproduce the original compiler collision and checks spread/point routing. Trading rules and MT4 files are unchanged. Native MetaEditor 5 compilation remains required.

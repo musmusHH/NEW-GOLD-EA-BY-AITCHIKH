@@ -15,6 +15,8 @@ class MT5PortTests(unittest.TestCase):
         subprocess.run(['python', str(ROOT/'tools/build_mt5.py'), '--check'],check=True)
         self.assertIn('ACCOUNT_MARGIN_MODE_RETAIL_HEDGING',SOURCE)
         self.assertIn('input bool mt5AllowLiveTrading=false',SOURCE)
+        self.assertIsNone(re.search(r'\bMODE_[A-Z_]+\b',SOURCE))
+        self.assertIn('X9_MODE_SPREAD',SOURCE)
         self.assertIn('long ticket;',SOURCE)
         self.assertIn('long tickets[];',SOURCE)
         self.assertNotIn('orderPriceMap',SOURCE)
@@ -33,6 +35,7 @@ class MT5PortTests(unittest.TestCase):
         normalized=SOURCE.split('// END native MT5 adapter')[1]
         names=set(re.findall(r'\bX9((?:Order\w*|Orders\w*|Account\w*|MarketInfo|IsTesting|IsVisualMode|RefreshRates|GetLastError|ResetLastError))\(',BRIDGE))
         for name in names: normalized=normalized.replace('X9'+name+'(',name+'(')
+        normalized=re.sub(r'\bX9_MODE_([A-Z_]+)\b', r'MODE_\1', normalized)
         def body(text,name):
             match=re.search(r'^(?:void|bool|double) '+name+r'\([^\n]*\)\s*\{',text,re.M)
             start=match.start();i=match.end();depth=1
@@ -61,6 +64,8 @@ class MT5PortTests(unittest.TestCase):
 using namespace std;
 using datetime=long;using color=unsigned;using uint=unsigned;
 using ENUM_ORDER_TYPE=int;
+// Emulate the actual MT5 built-in that originally exposed the collision.
+enum ENUM_SERIESMODE { MODE_SPREAD=4 };
 struct MqlTick{double ask=2001,bid=2000;};
 struct MqlTradeRequest {int action=0,type=0,type_time=0,type_filling=0;string symbol,comment;ulong magic=0,position=0,order=0;double volume=0,price=0,sl=0,tp=0;int deviation=0;datetime expiration=0;};
 struct MqlTradeResult {uint retcode=0;ulong order=0;string comment;};
@@ -91,7 +96,7 @@ double SymbolInfoDouble(string,int p){
  if(p==SYMBOL_TRADE_TICK_SIZE)return 0.05;if(p==SYMBOL_VOLUME_MIN)return 0.01;
  return 1;
 }
-long SymbolInfoInteger(string,int p){if(p==SYMBOL_DIGITS)return 2;if(p==SYMBOL_EXPIRATION_MODE)return expirationMode;
+long SymbolInfoInteger(string,int p){if(p==SYMBOL_SPREAD)return 80;if(p==SYMBOL_DIGITS)return 2;if(p==SYMBOL_EXPIRATION_MODE)return expirationMode;
  if(p==SYMBOL_FILLING_MODE)return fillingMode;if(p==SYMBOL_TRADE_EXEMODE)return executionMode;return 0;}
 bool OrderCalcMargin(int,string,double lot,double,double &m){m=lot*100;return true;}
 bool HistorySelect(int,datetime){return historyOK;}
@@ -124,18 +129,20 @@ Native history(ulong ticket,long id,long side,long entry,double vol,double profi
 int main(){
  marginMode=ACCOUNT_MARGIN_MODE_RETAIL_HEDGING;tradeMode=ACCOUNT_TRADE_MODE_DEMO;
  expirationMode=SYMBOL_EXPIRATION_GTC|SYMBOL_EXPIRATION_SPECIFIED;fillingMode=SYMBOL_FILLING_IOC;executionMode=SYMBOL_TRADE_EXECUTION_MARKET;x9Magic=123457;
+ assert(X9MarketInfo(_Symbol,X9_MODE_SPREAD)==80);
+ assert(X9MarketInfo(_Symbol,X9_MODE_POINT)==1);
  // A BUY closed with SELL deals must still report BUY, attributed to entry identity.
  deals={history(8000000001UL,7000000001L,DEAL_TYPE_BUY,DEAL_ENTRY_IN,1,0,100,123457,"X9 S9"),
         history(8000000002UL,7000000001L,DEAL_TYPE_SELL,DEAL_ENTRY_OUT,.4,20,200,0,"manual exit"),
         history(8000000003UL,7000000001L,DEAL_TYPE_SELL,DEAL_ENTRY_OUT_BY,.6,-3,300,0,"close by")};
  Native deposit=history(8000000004UL,0,9999,DEAL_ENTRY_IN,0,500,400,0,"deposit");deals.push_back(deposit);
  assert(X9OrdersHistoryTotal()==2);
- assert(X9OrderSelect(0,SELECT_BY_POS,MODE_HISTORY));assert(X9OrderType()==OP_BUY);
+ assert(X9OrderSelect(0,SELECT_BY_POS,X9_MODE_HISTORY));assert(X9OrderType()==OP_BUY);
  assert(X9OrderTicket()==8000000002L&&X9OrderMagicNumber()==123457&&X9OrderComment()=="X9 S9");
  assert(abs(X9OrderCommission()+1.6)<1e-9&&X9OrderLots()==.4&&X9OrderProfit()==20);
  // Tick/floating changes do not add samples; a corrected deal invalidates cleanly.
  assert(X9OrdersHistoryTotal()==2);deals[1].doubles[DEAL_PROFIT]=21;x9HistoryDirty=true;
- assert(X9OrdersHistoryTotal()==2);X9OrderSelect(0,SELECT_BY_POS,MODE_HISTORY);assert(X9OrderProfit()==21);
+ assert(X9OrdersHistoryTotal()==2);X9OrderSelect(0,SELECT_BY_POS,X9_MODE_HISTORY);assert(X9OrderProfit()==21);
  historyOK=false;x9HistoryDirty=true;assert(X9OrdersHistoryTotal()==-1);assert(x9History.size()==2);historyOK=true;
  Native p{};p.ticket=6000000001UL;p.ints={{POSITION_IDENTIFIER,7000000001L},{POSITION_MAGIC,123457},{POSITION_TYPE,POSITION_TYPE_BUY},{POSITION_TIME,100}};
  p.strings={{POSITION_SYMBOL,"XAUUSD"},{POSITION_COMMENT,"X9 S9"}};p.doubles={{POSITION_VOLUME,1},{POSITION_PRICE_OPEN,2000},{POSITION_PROFIT,15}};positions.push_back(p);

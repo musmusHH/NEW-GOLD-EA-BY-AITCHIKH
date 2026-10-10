@@ -15,7 +15,7 @@
 //+------------------------------------------------------------------+
 #property copyright   "Mr. CapFree"
 #property link        "https://example.com"
-#property version     "7.000"   // Broker-data chart panel + carryover performance
+#property version     "7.001"   // Broker-data chart panel + carryover performance
 #property description "gold X9 Full Focus design 4 + four themes + broker-data chart"
 #property strict
 #include <Canvas\Canvas.mqh>
@@ -33,15 +33,15 @@ input bool mt5AllowLiveTrading=false; // Explicit opt-in AFTER tester/demo valid
 #define OP_SELLSTOP 5
 #define SELECT_BY_POS 0
 #define SELECT_BY_TICKET 1
-#define MODE_TRADES 0
-#define MODE_HISTORY 1
+#define X9_MODE_TRADES 0
+#define X9_MODE_HISTORY 1
 #define ERR_TRADE_CONTEXT_BUSY 146
 #define ERR_REQUOTE 138
 #define ERR_PRICE_CHANGED 135
 #define ERR_OFF_QUOTES 136
-enum X9MarketProperty { MODE_ASK,MODE_BID,MODE_POINT,MODE_DIGITS,MODE_STOPLEVEL,
- MODE_FREEZELEVEL,MODE_MAXLOT,MODE_MINLOT,MODE_LOTSTEP,MODE_TICKSIZE,MODE_TICKVALUE,
- MODE_SPREAD,MODE_MARGINREQUIRED };
+enum X9MarketProperty { X9_MODE_ASK,X9_MODE_BID,X9_MODE_POINT,X9_MODE_DIGITS,X9_MODE_STOPLEVEL,
+ X9_MODE_FREEZELEVEL,X9_MODE_MAXLOT,X9_MODE_MINLOT,X9_MODE_LOTSTEP,X9_MODE_TICKSIZE,X9_MODE_TICKVALUE,
+ X9_MODE_SPREAD,X9_MODE_MARGINREQUIRED };
 
 struct X9Record
   {
@@ -74,19 +74,19 @@ double X9MarketInfo(string symbol,int mode)
   {
    switch(mode)
      {
-      case MODE_ASK:return SymbolInfoDouble(symbol,SYMBOL_ASK);
-      case MODE_BID:return SymbolInfoDouble(symbol,SYMBOL_BID);
-      case MODE_POINT:return SymbolInfoDouble(symbol,SYMBOL_POINT);
-      case MODE_DIGITS:return (double)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
-      case MODE_STOPLEVEL:return (double)SymbolInfoInteger(symbol,SYMBOL_TRADE_STOPS_LEVEL);
-      case MODE_FREEZELEVEL:return (double)SymbolInfoInteger(symbol,SYMBOL_TRADE_FREEZE_LEVEL);
-      case MODE_MAXLOT:return SymbolInfoDouble(symbol,SYMBOL_VOLUME_MAX);
-      case MODE_MINLOT:return SymbolInfoDouble(symbol,SYMBOL_VOLUME_MIN);
-      case MODE_LOTSTEP:return SymbolInfoDouble(symbol,SYMBOL_VOLUME_STEP);
-      case MODE_TICKSIZE:return SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
-      case MODE_TICKVALUE:return SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_VALUE);
-      case MODE_SPREAD:return (double)SymbolInfoInteger(symbol,SYMBOL_SPREAD);
-      case MODE_MARGINREQUIRED:
+      case X9_MODE_ASK:return SymbolInfoDouble(symbol,SYMBOL_ASK);
+      case X9_MODE_BID:return SymbolInfoDouble(symbol,SYMBOL_BID);
+      case X9_MODE_POINT:return SymbolInfoDouble(symbol,SYMBOL_POINT);
+      case X9_MODE_DIGITS:return (double)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
+      case X9_MODE_STOPLEVEL:return (double)SymbolInfoInteger(symbol,SYMBOL_TRADE_STOPS_LEVEL);
+      case X9_MODE_FREEZELEVEL:return (double)SymbolInfoInteger(symbol,SYMBOL_TRADE_FREEZE_LEVEL);
+      case X9_MODE_MAXLOT:return SymbolInfoDouble(symbol,SYMBOL_VOLUME_MAX);
+      case X9_MODE_MINLOT:return SymbolInfoDouble(symbol,SYMBOL_VOLUME_MIN);
+      case X9_MODE_LOTSTEP:return SymbolInfoDouble(symbol,SYMBOL_VOLUME_STEP);
+      case X9_MODE_TICKSIZE:return SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
+      case X9_MODE_TICKVALUE:return SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_VALUE);
+      case X9_MODE_SPREAD:return (double)SymbolInfoInteger(symbol,SYMBOL_SPREAD);
+      case X9_MODE_MARGINREQUIRED:
         {
          double margin=0;double lot=SymbolInfoDouble(symbol,SYMBOL_VOLUME_MIN);
          if(lot>0 && OrderCalcMargin(ORDER_TYPE_BUY,symbol,lot,SymbolInfoDouble(symbol,SYMBOL_ASK),margin)) return margin/lot;
@@ -212,10 +212,10 @@ bool X9LoadPending(ulong ticket)
    x9Selected.volume=OrderGetDouble(ORDER_VOLUME_CURRENT);x9Selected.entry=OrderGetDouble(ORDER_PRICE_OPEN);
    x9Selected.sl=OrderGetDouble(ORDER_SL);x9Selected.tp=OrderGetDouble(ORDER_TP);return true;
   }
-bool X9OrderSelect(long value,int select,int pool=MODE_TRADES)
+bool X9OrderSelect(long value,int select,int pool=X9_MODE_TRADES)
   {
    ZeroMemory(x9Selected);x9Selected.type=-1;
-   if(pool==MODE_HISTORY)
+   if(pool==X9_MODE_HISTORY)
      {
       if(!X9BuildHistory())return false;
       if(select==SELECT_BY_POS){if(value<0 || value>=ArraySize(x9History))return false;x9Selected=x9History[(int)value];return true;}
@@ -1049,7 +1049,7 @@ void PanelPruneTrails()
   {
    for(int i=ArraySize(g_panelTrails)-1;i>=0;i--)
      {
-      bool closed=!X9OrderSelect(g_panelTrails[i].ticket,SELECT_BY_TICKET,MODE_TRADES);
+      bool closed=!X9OrderSelect(g_panelTrails[i].ticket,SELECT_BY_TICKET,X9_MODE_TRADES);
       if(!closed) closed=(X9OrderCloseTime()!=0);
       if(!closed) continue;
       int last=ArraySize(g_panelTrails)-1;
@@ -1098,7 +1098,7 @@ void PanelTradeTable()
    long pendingTickets[];
    for(int i=0;i<X9OrdersTotal();i++)
      {
-      if(!X9OrderSelect(i,SELECT_BY_POS,MODE_TRADES)) continue;
+      if(!X9OrderSelect(i,SELECT_BY_POS,X9_MODE_TRADES)) continue;
       if(X9OrderCloseTime()!=0 || !IsMatchingOrderIdentity()) continue;
       if(X9OrderType()<OP_BUY || X9OrderType()>OP_SELLSTOP) continue;
       if(X9OrderType()==OP_BUY || X9OrderType()==OP_SELL)
@@ -1155,7 +1155,7 @@ void PanelTradeTable()
       long ticket=0;
       if(index<ArraySize(tickets)) ticket=tickets[index];
       else ticket=pendingTickets[index-ArraySize(tickets)];
-      if(!X9OrderSelect(ticket,SELECT_BY_TICKET,MODE_TRADES) || X9OrderCloseTime()!=0) continue;
+      if(!X9OrderSelect(ticket,SELECT_BY_TICKET,X9_MODE_TRADES) || X9OrderCloseTime()!=0) continue;
       string values[7];
       values[0]=IntegerToString(X9OrderTicket()); values[1]=PanelOrderName(X9OrderType());
       values[2]=DoubleToString(X9OrderLots(),2);values[3]=PanelLiveMoney();
@@ -1263,7 +1263,7 @@ void PanelDraw(bool force)
    PanelLevel levels[];
    for(int pos=0;pos<X9OrdersTotal();pos++)
      {
-      if(!X9OrderSelect(pos,SELECT_BY_POS,MODE_TRADES)) continue;
+      if(!X9OrderSelect(pos,SELECT_BY_POS,X9_MODE_TRADES)) continue;
       if(X9OrderCloseTime()!=0 || !IsMatchingOrderIdentity()) continue;
       int type=X9OrderType();
       if(type<OP_BUY || type>OP_SELLSTOP) continue;
@@ -1400,21 +1400,21 @@ bool PanelTableClick(int x,int y)
    return true;
   }
 
-double SymbolAsk()         { return X9MarketInfo(activeTradeSymbol, MODE_ASK); }
-double SymbolBid()         { return X9MarketInfo(activeTradeSymbol, MODE_BID); }
-double SymbolPoint()       { return X9MarketInfo(activeTradeSymbol, MODE_POINT); }
-int    SymbolDigits()      { return (int)X9MarketInfo(activeTradeSymbol, MODE_DIGITS); }
-double SymbolStopsLevel()  { return X9MarketInfo(activeTradeSymbol, MODE_STOPLEVEL)   * activeSymbolPoint; }
-double SymbolFreezeLevel() { return X9MarketInfo(activeTradeSymbol, MODE_FREEZELEVEL) * activeSymbolPoint; }
-double SymbolVolumeMax()   { return X9MarketInfo(activeTradeSymbol, MODE_MAXLOT); }
-double SymbolVolumeMin()   { return X9MarketInfo(activeTradeSymbol, MODE_MINLOT); }
-double SymbolVolumeStep()  { return X9MarketInfo(activeTradeSymbol, MODE_LOTSTEP); }
+double SymbolAsk()         { return X9MarketInfo(activeTradeSymbol, X9_MODE_ASK); }
+double SymbolBid()         { return X9MarketInfo(activeTradeSymbol, X9_MODE_BID); }
+double SymbolPoint()       { return X9MarketInfo(activeTradeSymbol, X9_MODE_POINT); }
+int    SymbolDigits()      { return (int)X9MarketInfo(activeTradeSymbol, X9_MODE_DIGITS); }
+double SymbolStopsLevel()  { return X9MarketInfo(activeTradeSymbol, X9_MODE_STOPLEVEL)   * activeSymbolPoint; }
+double SymbolFreezeLevel() { return X9MarketInfo(activeTradeSymbol, X9_MODE_FREEZELEVEL) * activeSymbolPoint; }
+double SymbolVolumeMax()   { return X9MarketInfo(activeTradeSymbol, X9_MODE_MAXLOT); }
+double SymbolVolumeMin()   { return X9MarketInfo(activeTradeSymbol, X9_MODE_MINLOT); }
+double SymbolVolumeStep()  { return X9MarketInfo(activeTradeSymbol, X9_MODE_LOTSTEP); }
 
 bool SelectPending(int index)
   {
    selTicket = -1; selType = -1; selPrice = 0.0; selMagic = 0; selSymbol = "";
    if(index < 0 || index >= X9OrdersTotal()) return false;
-   if(!X9OrderSelect(index, SELECT_BY_POS, MODE_TRADES)) return false;
+   if(!X9OrderSelect(index, SELECT_BY_POS, X9_MODE_TRADES)) return false;
    int type = X9OrderType();
    if(type != OP_BUYLIMIT && type != OP_SELLLIMIT && type != OP_BUYSTOP && type != OP_SELLSTOP) return false;
    selTicket = X9OrderTicket(); selType = type; selPrice = X9OrderOpenPrice(); selMagic = X9OrderMagicNumber(); selSymbol = X9OrderSymbol();
@@ -1425,7 +1425,7 @@ bool SelectOwnPosition(int index)
   {
    selTicket = -1; selType = -1; selPrice = 0.0; selMagic = 0; selSymbol = "";
    if(index < 0 || index >= X9OrdersTotal()) return false;
-   if(!X9OrderSelect(index, SELECT_BY_POS, MODE_TRADES)) return false;
+   if(!X9OrderSelect(index, SELECT_BY_POS, X9_MODE_TRADES)) return false;
    int type = X9OrderType();
    if(type != OP_BUY && type != OP_SELL) return false;
    if(X9OrderMagicNumber() != activeMagicNumber) return false;
@@ -1578,7 +1578,7 @@ long SendPendingOrder(int type, double lots, double price, double sl, double tp,
    for(int attempt = 0; attempt < 5; attempt++)
      {
       X9RefreshRates();
-      double neededMargin = X9MarketInfo(activeTradeSymbol, MODE_MARGINREQUIRED) * lots;
+      double neededMargin = X9MarketInfo(activeTradeSymbol, X9_MODE_MARGINREQUIRED) * lots;
       if(neededMargin > 0.0 && neededMargin > X9AccountFreeMargin())
         {
          Print("gold_x9: insufficient free margin. Needed ", DoubleToString(neededMargin, 2), " Free ", DoubleToString(X9AccountFreeMargin(), 2));
@@ -1821,7 +1821,7 @@ void SeedEquityHistory()
    double closedNet=0.0;
    for(int i=0;i<total;i++)
      {
-      if(!X9OrderSelect(i,SELECT_BY_POS,MODE_HISTORY)) return; // Retry an incomplete snapshot.
+      if(!X9OrderSelect(i,SELECT_BY_POS,X9_MODE_HISTORY)) return; // Retry an incomplete snapshot.
       if(!IsMatchingOrder() || X9OrderCloseTime()<=0) continue;
       deals[count].ticket=X9OrderTicket();
       deals[count].closed=X9OrderCloseTime();
@@ -1910,8 +1910,8 @@ int OnInit()
    activeStopLevel   = SymbolStopsLevel();
    activeFreezeLevel = SymbolFreezeLevel();
 
-   activeTickSize  = X9MarketInfo(activeTradeSymbol, MODE_TICKSIZE);
-   activeTickValue = X9MarketInfo(activeTradeSymbol, MODE_TICKVALUE);
+   activeTickSize  = X9MarketInfo(activeTradeSymbol, X9_MODE_TICKSIZE);
+   activeTickValue = X9MarketInfo(activeTradeSymbol, X9_MODE_TICKVALUE);
    if(activeTickSize <= 0.0) activeTickSize = activeSymbolPoint;
 
    activeFractalTimeFrame  = fractalTimeFrame;
@@ -2013,7 +2013,7 @@ int OnInit()
    PanelDraw(true);
    if(PanelEnabled()) EventSetTimer(1);
 
-   Print("gold_x9 MT5 v7.000 (HEDGING) initialised on ", activeTradeSymbol, " digits=", activeSymbolDigits, " point=", DoubleToString(activeSymbolPoint, activeSymbolDigits), " result boxes=removed", " hud=", (showDashboardPanel ? "on" : "off"));
+   Print("gold_x9 MT5 v7.001 (HEDGING) initialised on ", activeTradeSymbol, " digits=", activeSymbolDigits, " point=", DoubleToString(activeSymbolPoint, activeSymbolDigits), " result boxes=removed", " hud=", (showDashboardPanel ? "on" : "off"));
    return(INIT_SUCCEEDED);
   }
 
@@ -2264,7 +2264,7 @@ void expireStalePendingOrders()
      {
       if(!SelectPending(i)) continue;
       if(!IsOwnPending(-1)) continue;
-      if(!X9OrderSelect(selTicket, SELECT_BY_TICKET, MODE_TRADES)) continue;
+      if(!X9OrderSelect(selTicket, SELECT_BY_TICKET, X9_MODE_TRADES)) continue;
       if(X9OrderExpiration() > 0) continue;
 
       if(now - X9OrderOpenTime() >= lifetime)
@@ -2302,7 +2302,7 @@ void manageOpenPositions()
    for(int i = X9OrdersTotal() - 1; i >= 0; i--)
      {
       if(!SelectOwnPosition(i)) continue;
-      if(!X9OrderSelect(selTicket, SELECT_BY_TICKET, MODE_TRADES)) continue;
+      if(!X9OrderSelect(selTicket, SELECT_BY_TICKET, X9_MODE_TRADES)) continue;
 
       int    type     = X9OrderType();
       double openPr   = X9OrderOpenPrice();
@@ -2391,8 +2391,8 @@ void manageOpenPositions()
          string pkey = IntegerToString((int)X9OrderOpenTime()) + "_" + DoubleToString(openPr, activeSymbolDigits);
          if(!PartialKeyExists(pkey))
            {
-            double lotStep  = X9MarketInfo(activeTradeSymbol, MODE_LOTSTEP);
-            double minLot   = X9MarketInfo(activeTradeSymbol, MODE_MINLOT);
+            double lotStep  = X9MarketInfo(activeTradeSymbol, X9_MODE_LOTSTEP);
+            double minLot   = X9MarketInfo(activeTradeSymbol, X9_MODE_MINLOT);
             double openLots = X9OrderLots();
             double halfLot  = 0.0;
             if(lotStep > 0.0) halfLot = NormalizeDouble(MathFloor(openLots / 2.0 / lotStep) * lotStep, 2);
@@ -2763,7 +2763,7 @@ void RefreshStats()
    if(total<0) return;
    for(int i=0;i<total;i++)
      {
-      if(!X9OrderSelect(i,SELECT_BY_POS,MODE_HISTORY)) continue;
+      if(!X9OrderSelect(i,SELECT_BY_POS,X9_MODE_HISTORY)) continue;
       if(!IsMatchingOrder()) continue;
       int typ=X9OrderType();
       int sid=ParseSid(X9OrderComment());
@@ -2788,7 +2788,7 @@ void RefreshStats()
    g_streak=0; bool first=true, sign=true;
    for(int z=total-1;z>=0;z--)
      {
-      if(!X9OrderSelect(z,SELECT_BY_POS,MODE_HISTORY))continue;
+      if(!X9OrderSelect(z,SELECT_BY_POS,X9_MODE_HISTORY))continue;
       if(!IsMatchingOrder()) continue;
       bool win=(X9OrderProfit()+X9OrderSwap()-CommissionCost(X9OrderLots()))>=0.0;
       if(first){sign=win;first=false;}
@@ -2800,7 +2800,7 @@ void RefreshStats()
    int keys[]; ArrayResize(keys,total); ArrayInitialize(keys,0); int nk=0;
    for(int q=0;q<total;q++)
      {
-      if(!X9OrderSelect(q,SELECT_BY_POS,MODE_HISTORY))continue;
+      if(!X9OrderSelect(q,SELECT_BY_POS,X9_MODE_HISTORY))continue;
       if(!IsMatchingOrder()) continue;
       MqlDateTime ds; TimeToStruct(X9OrderCloseTime(),ds);
       int key=ds.year*10000+ds.mon*100+ds.day;
@@ -2813,7 +2813,7 @@ void RefreshStats()
    for(int r=0;r<8;r++){g_tD[r]=0;g_tSide[r]=0;g_tLot[r]=0;g_tGain[r]=0;g_tComm[r]=0;g_tProf[r]=0;g_tNet[r]=0;}
    for(int q2=0;q2<total;q2++)
      {
-      if(!X9OrderSelect(q2,SELECT_BY_POS,MODE_HISTORY))continue;
+      if(!X9OrderSelect(q2,SELECT_BY_POS,X9_MODE_HISTORY))continue;
       if(!IsMatchingOrder()) continue;
       MqlDateTime dd; TimeToStruct(X9OrderCloseTime(),dd);
       int dk=dd.year*10000+dd.mon*100+dd.day;
@@ -2937,7 +2937,7 @@ void HudTick(bool force)
    double openLots = 0.0, openPips = 0.0, openProfit = 0.0, openComm = 0.0, openSwap = 0.0;
    for(int i = X9OrdersTotal() - 1; i >= 0; i--)
      {
-      if(!X9OrderSelect(i, SELECT_BY_POS, MODE_TRADES)) continue;
+      if(!X9OrderSelect(i, SELECT_BY_POS, X9_MODE_TRADES)) continue;
       if(X9OrderCloseTime()!=0 || !IsMatchingOrderIdentity()) continue;
       int liveType=X9OrderType();
       if(liveType==OP_BUYSTOP || liveType==OP_BUYLIMIT) { pendingBuy++; continue; }
@@ -3020,7 +3020,7 @@ void HudTick(bool force)
    info[0]=IntegerToString(openCount)+" (B"+IntegerToString(buyCount)+" S"+IntegerToString(sellCount)+")";
    info[1]=IntegerToString(pendingBuy+pendingSell)+" (B"+IntegerToString(pendingBuy)+" S"+IntegerToString(pendingSell)+")";
    info[2]=DoubleToString(openLots,2);
-   info[3]=IntegerToString((int)X9MarketInfo(activeTradeSymbol,MODE_SPREAD));
+   info[3]=IntegerToString((int)X9MarketInfo(activeTradeSymbol,X9_MODE_SPREAD));
    info[4]=DoubleToString(g_currentDD,1)+"%";
    info[5]=StringFormat("%dh %02dm",(int)g_avgHoldSec/3600,((int)g_avgHoldSec%3600)/60);
    info[6]=IntegerToString(nTrades);
@@ -3033,7 +3033,7 @@ void HudTick(bool force)
 
    if(showSpreadTag)
      {
-      int spreadPoints = (int)X9MarketInfo(activeTradeSymbol, MODE_SPREAD);
+      int spreadPoints = (int)X9MarketInfo(activeTradeSymbol, X9_MODE_SPREAD);
       int periodSec = PeriodSeconds(0);
       if(periodSec < 1) periodSec = 60;
       int remain = periodSec - (int)(TimeCurrent() % periodSec);
@@ -3091,7 +3091,7 @@ void HudTick(bool force)
    HudSetText(HUD_PREFIX+"trk_SV3",DoubleToString(drag,1)+"%",(drag>5.0)?UiBad():UiInk());
    HudSetText(HUD_PREFIX+"trk_SV4",(g_bestNet>=0.0?"+":"")+DoubleToString(g_bestNet,2)+" / "+(g_worstNet>=0.0?"+":"")+DoubleToString(g_worstNet,2),UiInk());
 
-   int spreadPoints=(int)X9MarketInfo(activeTradeSymbol,MODE_SPREAD);
+   int spreadPoints=(int)X9MarketInfo(activeTradeSymbol,X9_MODE_SPREAD);
    int periodSec=PeriodSeconds(0); if(periodSec<1)periodSec=60;
    int remain=periodSec-(int)(TimeCurrent()%periodSec);
    string cd=(remain>=3600)?StringFormat("%02d:%02d:%02d",remain/3600,(remain%3600)/60,remain%60):StringFormat("%02d:%02d",remain/60,remain%60);

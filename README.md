@@ -2,7 +2,7 @@
 
 ## MT5 hedging version
 
-**[gold_x9_MT5.mq5](gold_x9_MT5.mq5)** — v7.000 source port with the same Raised Solid interface and trading strategy. Read **[MT5_PORT.md](MT5_PORT.md)** before installation. Hedging only; real accounts are locked by default (`mt5AllowLiveTrading=false`). Native MetaEditor 5 compilation and tester/demo validation are still required; no EX5 binary or live-readiness claim is supplied.
+**[gold_x9_MT5.mq5](gold_x9_MT5.mq5)** — v7.001 source port with the same Raised Solid interface and trading strategy. Read **[MT5_PORT.md](MT5_PORT.md)** before installation. Hedging only; real accounts are locked by default (`mt5AllowLiveTrading=false`). Native MetaEditor 5 compilation and tester/demo validation are still required; no EX5 binary or live-readiness claim is supplied.
 
 ## MT4 version
 

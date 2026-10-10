@@ -10,15 +10,15 @@ input bool mt5AllowLiveTrading=false; // Explicit opt-in AFTER tester/demo valid
 #define OP_SELLSTOP 5
 #define SELECT_BY_POS 0
 #define SELECT_BY_TICKET 1
-#define MODE_TRADES 0
-#define MODE_HISTORY 1
+#define X9_MODE_TRADES 0
+#define X9_MODE_HISTORY 1
 #define ERR_TRADE_CONTEXT_BUSY 146
 #define ERR_REQUOTE 138
 #define ERR_PRICE_CHANGED 135
 #define ERR_OFF_QUOTES 136
-enum X9MarketProperty { MODE_ASK,MODE_BID,MODE_POINT,MODE_DIGITS,MODE_STOPLEVEL,
- MODE_FREEZELEVEL,MODE_MAXLOT,MODE_MINLOT,MODE_LOTSTEP,MODE_TICKSIZE,MODE_TICKVALUE,
- MODE_SPREAD,MODE_MARGINREQUIRED };
+enum X9MarketProperty { X9_MODE_ASK,X9_MODE_BID,X9_MODE_POINT,X9_MODE_DIGITS,X9_MODE_STOPLEVEL,
+ X9_MODE_FREEZELEVEL,X9_MODE_MAXLOT,X9_MODE_MINLOT,X9_MODE_LOTSTEP,X9_MODE_TICKSIZE,X9_MODE_TICKVALUE,
+ X9_MODE_SPREAD,X9_MODE_MARGINREQUIRED };
 
 struct X9Record
   {
@@ -51,19 +51,19 @@ double X9MarketInfo(string symbol,int mode)
   {
    switch(mode)
      {
-      case MODE_ASK:return SymbolInfoDouble(symbol,SYMBOL_ASK);
-      case MODE_BID:return SymbolInfoDouble(symbol,SYMBOL_BID);
-      case MODE_POINT:return SymbolInfoDouble(symbol,SYMBOL_POINT);
-      case MODE_DIGITS:return (double)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
-      case MODE_STOPLEVEL:return (double)SymbolInfoInteger(symbol,SYMBOL_TRADE_STOPS_LEVEL);
-      case MODE_FREEZELEVEL:return (double)SymbolInfoInteger(symbol,SYMBOL_TRADE_FREEZE_LEVEL);
-      case MODE_MAXLOT:return SymbolInfoDouble(symbol,SYMBOL_VOLUME_MAX);
-      case MODE_MINLOT:return SymbolInfoDouble(symbol,SYMBOL_VOLUME_MIN);
-      case MODE_LOTSTEP:return SymbolInfoDouble(symbol,SYMBOL_VOLUME_STEP);
-      case MODE_TICKSIZE:return SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
-      case MODE_TICKVALUE:return SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_VALUE);
-      case MODE_SPREAD:return (double)SymbolInfoInteger(symbol,SYMBOL_SPREAD);
-      case MODE_MARGINREQUIRED:
+      case X9_MODE_ASK:return SymbolInfoDouble(symbol,SYMBOL_ASK);
+      case X9_MODE_BID:return SymbolInfoDouble(symbol,SYMBOL_BID);
+      case X9_MODE_POINT:return SymbolInfoDouble(symbol,SYMBOL_POINT);
+      case X9_MODE_DIGITS:return (double)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
+      case X9_MODE_STOPLEVEL:return (double)SymbolInfoInteger(symbol,SYMBOL_TRADE_STOPS_LEVEL);
+      case X9_MODE_FREEZELEVEL:return (double)SymbolInfoInteger(symbol,SYMBOL_TRADE_FREEZE_LEVEL);
+      case X9_MODE_MAXLOT:return SymbolInfoDouble(symbol,SYMBOL_VOLUME_MAX);
+      case X9_MODE_MINLOT:return SymbolInfoDouble(symbol,SYMBOL_VOLUME_MIN);
+      case X9_MODE_LOTSTEP:return SymbolInfoDouble(symbol,SYMBOL_VOLUME_STEP);
+      case X9_MODE_TICKSIZE:return SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
+      case X9_MODE_TICKVALUE:return SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_VALUE);
+      case X9_MODE_SPREAD:return (double)SymbolInfoInteger(symbol,SYMBOL_SPREAD);
+      case X9_MODE_MARGINREQUIRED:
         {
          double margin=0;double lot=SymbolInfoDouble(symbol,SYMBOL_VOLUME_MIN);
          if(lot>0 && OrderCalcMargin(ORDER_TYPE_BUY,symbol,lot,SymbolInfoDouble(symbol,SYMBOL_ASK),margin)) return margin/lot;
@@ -189,10 +189,10 @@ bool X9LoadPending(ulong ticket)
    x9Selected.volume=OrderGetDouble(ORDER_VOLUME_CURRENT);x9Selected.entry=OrderGetDouble(ORDER_PRICE_OPEN);
    x9Selected.sl=OrderGetDouble(ORDER_SL);x9Selected.tp=OrderGetDouble(ORDER_TP);return true;
   }
-bool X9OrderSelect(long value,int select,int pool=MODE_TRADES)
+bool X9OrderSelect(long value,int select,int pool=X9_MODE_TRADES)
   {
    ZeroMemory(x9Selected);x9Selected.type=-1;
-   if(pool==MODE_HISTORY)
+   if(pool==X9_MODE_HISTORY)
      {
       if(!X9BuildHistory())return false;
       if(select==SELECT_BY_POS){if(value<0 || value>=ArraySize(x9History))return false;x9Selected=x9History[(int)value];return true;}

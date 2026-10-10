@@ -13,10 +13,12 @@ def render():
     names = set(re.findall(r'\bX9((?:Order\w*|Orders\w*|Account\w*|MarketInfo|IsTesting|IsVisualMode|RefreshRates|GetLastError|ResetLastError))\(', bridge))
     for name in sorted(names, key=len, reverse=True):
         source = re.sub(r'\b' + name + r'\s*\(', 'X9' + name + '(', source)
+    # MT5 already defines MODE_SPREAD (ENUM_SERIESMODE). Namespace every legacy mode.
+    source = re.sub(r'\bMODE_[A-Z_]+\b', lambda m: 'X9_' + m.group(), source)
     source = source.replace('gold_x9_FIXED.mq4', 'gold_x9_MT5.mq5')
-    source = source.replace('#property version     "6.750"', '#property version     "7.000"')
+    source = source.replace('#property version     "6.750"', '#property version     "7.001"')
     source = source.replace('MQL4 port of', 'MT5 hedging port of')
-    source = source.replace('gold_x9 v6.75 (MQL4)', 'gold_x9 MT5 v7.000 (HEDGING)')
+    source = source.replace('gold_x9 v6.75 (MQL4)', 'gold_x9 MT5 v7.001 (HEDGING)')
     # MT5 order/position/deal identifiers must never be narrowed to 32 bits.
     source = re.sub(r'\bint(\s+)(ticket|lastTradeTicket|selTicket|selMagic|tickets|pendingTickets)\b', r'long\1\2', source)
     source = source.replace('int SendPendingOrder(', 'long SendPendingOrder(')
