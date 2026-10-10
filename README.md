@@ -1,5 +1,11 @@
 # NEW GOLD EA BY AITCHIKH — X9 Full Focus
 
+## MT5 hedging version
+
+**[gold_x9_MT5.mq5](gold_x9_MT5.mq5)** — v7.000 source port with the same Raised Solid interface and trading strategy. Read **[MT5_PORT.md](MT5_PORT.md)** before installation. Hedging only; real accounts are locked by default (`mt5AllowLiveTrading=false`). Native MetaEditor 5 compilation and tester/demo validation are still required; no EX5 binary or live-readiness claim is supplied.
+
+## MT4 version
+
 Current source: **[gold_x9_FIXED.mq4](gold_x9_FIXED.mq4)** — v6.750.
 
 Selected layout: **design 4 / Graphite Full Focus**, with a full-width real-price chart, open-first trade table, closed-result EMA/DD curve and independent TRADE TRACKER.
