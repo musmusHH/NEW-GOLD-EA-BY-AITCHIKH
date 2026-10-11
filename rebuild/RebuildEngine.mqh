@@ -206,7 +206,9 @@ void PlacePending(int type,double entry)
    if(free<=0 || GetLastError()==134){g_rebuildStatus="INSUFFICIENT MARGIN";return;}
    string comment=tradeComment+(RebuildPointsMode()?" PTS":" PCT");
    ResetLastError();
-   datetime expiration=PendingExpiryMinutes>0?TimeCurrent()+(long)PendingExpiryMinutes*60:0;
+   datetime expiration=0;
+   if(PendingExpiryMinutes>0)
+      expiration=(datetime)((long)TimeCurrent()+(long)PendingExpiryMinutes*60);
    int ticket=OrderSend(g_symbol,type,lots,entry,SlippagePoints,sl,tp,comment,MagicNumber,expiration,
                         type==OP_BUYSTOP?clrDodgerBlue:clrTomato);
    // Error 147 is an explicit expiry rejection, not an uncertain execution result.
@@ -329,7 +331,7 @@ int RebuildInit()
    if(showEquityCurve)SeedEquityHistory();
    HudTick(true);UpdateStatus();EqDraw();PanelDraw(true);
    if(PanelEnabled())EventSetTimer(1);
-   Print("Gold X9 Rebuild Raised v1.120 | ",RebuildModeLabel()," | ",g_symbol);
+   Print("Gold X9 Rebuild Raised v1.121 | ",RebuildModeLabel()," | ",g_symbol);
    return INIT_SUCCEEDED;
   }
 void UpdateStatus()

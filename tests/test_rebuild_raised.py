@@ -23,6 +23,8 @@ class RebuildRaisedTests(unittest.TestCase):
         self.assertIn('IntegerToString(pendingBuy+pendingSell)+"/"+IntegerToString(MaxPendingOrders)',SOURCE)
         self.assertIn('IntegerToString(openCount)+"/"+IntegerToString(activeMaxPositions)',SOURCE)
         self.assertIn('BORDER_RAISED',SOURCE)
+        self.assertIn('expiration=(datetime)((long)TimeCurrent()+(long)PendingExpiryMinutes*60);',SOURCE)
+        self.assertNotIn('datetime expiration=PendingExpiryMinutes>0?',SOURCE)
         self.assertIn('filterMatchMode = MATCH_MAGIC_ONLY',SOURCE)
         timer=SOURCE.split('void OnTimer()')[1].split('void OnChartEvent')[0]
         for name in ['OrderSend','OrderModify','OrderDelete','RebuildTick','manageOpenPositions']:

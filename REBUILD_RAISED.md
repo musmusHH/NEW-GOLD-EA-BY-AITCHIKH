@@ -1,4 +1,4 @@
-# Independent MT4 Fractals rebuild + Raised Solid / v1.120
+# Independent MT4 Fractals rebuild + Raised Solid / v1.121
 
 **File: [gold_x9_Rebuild_Raised.mq4](gold_x9_Rebuild_Raised.mq4)**
 
@@ -89,7 +89,7 @@ Points are broker points, not pips. For example, 5000 points is a price distance
 1. Copy **gold_x9_Rebuild_Raised.mq4** into `MQL4/Experts`.
 2. Compile in a current **MetaEditor 4** with standard `Canvas/Canvas.mqh`; no custom includes or images need installation. This file is MT4, not MT5.
 3. First use a demo account / visual Strategy Tester, with the broker's gold symbol and intended timeframe.
-4. Verify the Journal line: `Gold X9 Rebuild Raised v1.120 | MULTI POINTS` (or the selected mode).
+4. Verify the Journal line: `Gold X9 Rebuild Raised v1.121 | MULTI POINTS` (or the selected mode).
 5. Verify all four mode settings against actual entry/SL/TP prices, BE/trailing, and successful TRAIL updates. Test failed modifications and freeze restrictions.
 6. Verify max pending=1, max open/pending=0, spread filtering while management continues, OCO with single/mixed directions, and unrelated magic isolation.
 7. Test risk lots versus broker specs and below-minimum risk rejection. Test partial-pay/aged-loss only with controlled demo positions.
@@ -145,3 +145,7 @@ New inputs (apply to all four modes):
 Installing this version does **not** immediately cancel nonexpired orders merely because one side exceeds its new quota. It blocks additional orders on that side; existing orders remain until fill, expiration or manual cancellation. Review existing same-magic orders before attaching. Increasing/decreasing the quotas does not close market positions. These are pending-direction limits, not guarantees of equal open BUY/SELL positions.
 
 Tests now cover single-sided level sets, reserved direction capacity, pending LIMIT orders counting toward a side, native expiration timestamps, 147-only fallback, expiry despite high spread, disabled expiry, failed deletion retries and ownership isolation. Existing tests still verify both management systems and all four UI themes. Native MetaEditor compilation/demo checks are still required.
+
+## v1.121 — expiration conversion warning
+
+Made the final conversion from 64-bit expiration arithmetic to `datetime` explicit, removing the implicit conversion at the reported line. The validated expiry-minute limit, native expiry and local fallback behavior are unchanged. Native MetaEditor warning verification remains required.
