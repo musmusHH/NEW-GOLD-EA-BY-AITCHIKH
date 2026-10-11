@@ -30,6 +30,11 @@ class RebuildRaisedTests(unittest.TestCase):
         for name in ['OrderSend','OrderModify','OrderDelete','RebuildTick','manageOpenPositions']:
             self.assertNotIn(name,timer)
 
+    def test_table_sorts_only_nontrivial_arrays(self):
+        for array in ('tickets','pendingTickets'):
+            self.assertIn('if(ArraySize('+array+')>1) ArraySort('+array+');',SOURCE)
+        self.assertEqual(len(re.findall(r'\bArraySort\(',SOURCE)),2)
+
     def test_reused_chart_and_four_theme_layout(self):
         import test_chart_panel
         import test_focus_design
@@ -38,7 +43,8 @@ class RebuildRaisedTests(unittest.TestCase):
             original=module.SOURCE
             try:
                 module.SOURCE=SOURCE
-                getattr(cls(),method)()
+                if module is test_chart_panel:getattr(cls(),method)(strict_sort=True)
+                else:getattr(cls(),method)()
             finally:module.SOURCE=original
 
     def test_engine_entries_limits_oco_management_and_risk(self):

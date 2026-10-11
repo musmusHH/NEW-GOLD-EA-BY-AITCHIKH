@@ -18,6 +18,10 @@ def replace_function(source,name,replacement=''):
 
 def render():
     source=(ROOT/'gold_x9_FIXED.mq4').read_text()
+    # MT4 rejects ArraySort on a zero-length array (start index 0 does not exist).
+    for array in ('tickets','pendingTickets'):
+        source=source.replace('   ArraySort('+array+');',
+                              '   if(ArraySize('+array+')>1) ArraySort('+array+');')
     inputs=(ROOT/'rebuild/RebuildInputs.mqh').read_text()
     engine=(ROOT/'rebuild/RebuildEngine.mqh').read_text()
     start=source.index('//--- INPUT PARAMETERS ---')
@@ -53,7 +57,7 @@ def render():
     source=source.replace('IntegerToString(pendingBuy+pendingSell),UiAmber());',
                           'IntegerToString(pendingBuy+pendingSell)+"/"+IntegerToString(MaxPendingOrders),UiAmber());')
     source=source.replace('filterMatchMode = MATCH_MAGIC_OR_COMMENT','filterMatchMode = MATCH_MAGIC_ONLY')
-    source=source.replace('#property version     "6.750"','#property version     "1.121"')
+    source=source.replace('#property version     "6.750"','#property version     "1.122"')
     source=source.replace('#property description "gold X9 Full Focus design 4 + four themes + broker-data chart"',
                           '#property description "Independent MT4 Fractals rebuild + Raised Solid HUD + single/multi Fractals + POINTS/PERCENT management; demo test first."')
     source='''// Independent MT4 reconstruction; NOT the original video's source code.

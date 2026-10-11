@@ -10,7 +10,7 @@ import unittest
 SOURCE = (Path(__file__).resolve().parents[1] / 'gold_x9_FIXED.mq4').read_text()
 
 class ChartPanelTests(unittest.TestCase):
-    def test_renderer_and_controls(self):
+    def test_renderer_and_controls(self, strict_sort=False):
         panel = SOURCE.split('//=== Broker-data chart panel')[1].split('double SymbolAsk()')[0]
         panel = '//=== Broker-data chart panel' + panel
         panel = re.sub(r"C'(\d+),(\d+),(\d+)'", r'RGB(\1,\2,\3)', panel)
@@ -331,6 +331,18 @@ int main(){
 
 }
 '''
+        if strict_sort:
+            stub=stub.replace('sort(v.begin(),v.end());', 'assert(v.size()>1);sort(v.begin(),v.end());')
+            main=main.replace(' // Six coincident types', r''' // Empty / market-only / pending-only / mixed snapshots must all be safe.
+ orders.clear();PanelDraw(true);assert(contains("No matching trades"));
+ orders={{OP_BUY,"XAUUSD",123457,4180,4160,4200,1.5}};
+ PanelDraw(true);assert(contains("OPEN 1")&&contains("PENDING 0"));
+ orders={{OP_SELLSTOP,"XAUUSD",123457,4155,4190,4140,0}};
+ PanelDraw(true);assert(contains("OPEN 0")&&contains("PENDING 1"));
+ orders.push_back({OP_BUY,"XAUUSD",123457,4180,4160,4200,1.5});
+ PanelDraw(true);assert(contains("OPEN 1")&&contains("PENDING 1"));
+ PanelDestroy();
+ // Six coincident types''')
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp)
             (path/'test.cpp').write_text(stub+palette+geometry+panel+main)

@@ -331,7 +331,7 @@ int RebuildInit()
    if(showEquityCurve)SeedEquityHistory();
    HudTick(true);UpdateStatus();EqDraw();PanelDraw(true);
    if(PanelEnabled())EventSetTimer(1);
-   Print("Gold X9 Rebuild Raised v1.121 | ",RebuildModeLabel()," | ",g_symbol);
+   Print("Gold X9 Rebuild Raised v1.122 | ",RebuildModeLabel()," | ",g_symbol);
    return INIT_SUCCEEDED;
   }
 void UpdateStatus()
