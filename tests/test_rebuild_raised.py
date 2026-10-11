@@ -61,9 +61,10 @@ double g_peakEquityLab,g_lotMultiplier;datetime lastExitManageTime=0;
 int selTicket,selType,selMagic;double selPrice;string selSymbol;
 string g_partialKeys[200];int chartStartBars=64,chartStartOffset=0,hudTheme=0;
 bool chartStartFitOrders=false,applyChartStyle=false,showDashboardPanel=true,showEquityCurve=true;
-struct Order {int ticket,type,magic;string symbol;double entry,sl,tp,lots;};vector<Order> orders;
+struct Order {int ticket,type,magic;string symbol;double entry,sl,tp,lots;datetime opened=100,expires=0;};vector<Order> orders;
 int selected=0,nextTicket=100,sendCalls=0,modifyCalls=0,trailCalls=0,percentCalls=0,deleted=0;
-bool testing=false,symbolOK=true,sendOK=true,modifyOK=true,marginOK=true;
+bool testing=false,symbolOK=true,sendOK=true,modifyOK=true,marginOK=true,deleteOK=true,denyExpiration=false;
+datetime lastExpiration=0;
 double bid=2000,ask=2000.20,point=.01,tick=.01,lotStep=.01,minLot=.01,maxLot=100,balance=10000;
 bool useLevels=false;map<int,double> upperLevels,lowerLevels;
 int availableBars=200;datetime now=1000,barTime=900;double upper=2010,lower=1990;int lastError=0;
@@ -71,14 +72,14 @@ int OrdersTotal(){return orders.size();}
 bool OrderSelect(int v,int mode,int){if(mode==SELECT_BY_TICKET){for(int i=0;i<int(orders.size());i++)if(orders[i].ticket==v){selected=i;return true;}return false;}if(v<0||v>=int(orders.size()))return false;selected=v;return true;}
 int OrderType(){return orders[selected].type;}int OrderTicket(){return orders[selected].ticket;}int OrderMagicNumber(){return orders[selected].magic;}
 string OrderSymbol(){return orders[selected].symbol;}int OrderCloseTime(){return 0;}
-datetime OrderOpenTime(){return 100;}datetime OrderExpiration(){return 0;}
+datetime OrderOpenTime(){return orders[selected].opened;}datetime OrderExpiration(){return orders[selected].expires;}
 double OrderProfit(){return 0;}double OrderSwap(){return 0;}double OrderCommission(){return 0;}
 double OrderLots(){return orders[selected].lots;}
 double OrderOpenPrice(){return orders[selected].entry;}double OrderStopLoss(){return orders[selected].sl;}double OrderTakeProfit(){return orders[selected].tp;}
-int OrderSend(string symbol,int type,double lots,double price,int,double sl,double tp,string,int magic,int,int){sendCalls++;if(!sendOK)return -1;int t=nextTicket++;orders.push_back({t,type,magic,symbol,price,sl,tp,lots});return t;}
+int OrderSend(string symbol,int type,double lots,double price,int,double sl,double tp,string,int magic,datetime expiry,int){sendCalls++;lastExpiration=expiry;if(denyExpiration&&expiry>0){lastError=147;return -1;}if(!sendOK){lastError=128;return -1;}int t=nextTicket++;orders.push_back({t,type,magic,symbol,price,sl,tp,lots,now,expiry});return t;}
 bool OrderModify(int ticket,double,double sl,double tp,int,int){modifyCalls++;if(!modifyOK)return false;for(auto &o:orders)if(o.ticket==ticket){o.sl=sl;o.tp=tp;return true;}return false;}
 bool OrderClose(int ticket,double lots,double,int,int){for(auto &o:orders)if(o.ticket==ticket){o.lots-=lots;return true;}return false;}
-bool OrderDelete(int ticket){for(int i=0;i<int(orders.size());i++)if(orders[i].ticket==ticket){orders.erase(orders.begin()+i);deleted++;return true;}return false;}
+bool OrderDelete(int ticket){if(!deleteOK)return false;for(int i=0;i<int(orders.size());i++)if(orders[i].ticket==ticket){orders.erase(orders.begin()+i);deleted++;return true;}return false;}
 double MarketInfo(string,int key){switch(key){case MODE_POINT:return point;case MODE_ASK:return ask;case MODE_BID:return bid;
  case MODE_DIGITS:return 2;case MODE_MINLOT:return minLot;case MODE_MAXLOT:return maxLot;case MODE_LOTSTEP:return lotStep;
  case MODE_TICKVALUE:return 1;case MODE_STOPLEVEL:return 50;case MODE_FREEZELEVEL:return 30;}return 0;}
@@ -110,6 +111,7 @@ int UiGood(){return 1;}int UiAmber(){return 2;}void UpdateStatus();
         main=r'''
 void reset(){orders.clear();sendCalls=modifyCalls=trailCalls=percentCalls=deleted=0;sendOK=modifyOK=marginOK=true;
  g_symbol="XAUUSD";g_lastBarTime=0;lastExitManageTime=0;ManagementMode=MANAGEMENT_POINTS;UseRiskPercent=false;
+ PendingExpiryMinutes=60;MaxPendingPerSide=5;denyExpiration=false;deleteOK=true;lastExpiration=0;
  MaxMarketPositions=10;MaxPendingOrders=10;DeleteOppositePending=true;OneEntryPerBar=true;EnableBuy=EnableSell=true;
  UseBreakEven=UseTrailingStop=true;enablePartialPay=false;enableAgedLossCut=true;for(auto &k:g_partialKeys)k="";bid=2000;ask=2000.20;point=tick=.01;lotStep=minLot=.01;maxLot=100;
  useLevels=false;upperLevels.clear();lowerLevels.clear();
@@ -192,12 +194,39 @@ int main(){
  // A single enabled side does not require an opposite fractal in multi mode.
  reset();ManagementMode=MANAGEMENT_MULTI_POINTS;useLevels=true;EnableSell=false;
  for(int i=2;i<12;i++)upperLevels[i]=2010+i;
- RebuildTick();assert(sendCalls==10);for(auto a:orders)assert(a.type==OP_BUYSTOP);
+ RebuildTick();assert(sendCalls==5);for(auto a:orders)assert(a.type==OP_BUYSTOP);
  reset();ManagementMode=MANAGEMENT_MULTI_POINTS;MaxPendingOrders=1;RebuildTick();assert(sendCalls==1);
  reset();ManagementMode=MANAGEMENT_MULTI_POINTS;MaxMarketPositions=1;
  orders={{1,OP_BUY,MagicNumber,"XAUUSD",2010,1900,2100,.01}};RebuildTick();assert(sendCalls==0);
  reset();ManagementMode=MANAGEMENT_MULTI_PERCENT;StopLossPoints=0;assert(RebuildParametersValid());
  StopLossPoints=5000;ManagementMode=(RebuildManagementMode)99;assert(!RebuildParametersValid());
+ // One-sided levels cannot consume the other side's quota, but both sides may fill their own slots.
+ reset();ManagementMode=MANAGEMENT_MULTI_POINTS;useLevels=true;MaxPendingPerSide=2;
+ for(int i=2;i<15;i++)lowerLevels[i]=1990-i;
+ RebuildTick();assert(sendCalls==2&&CountPendingSide(false)==2&&CountPendingSide(true)==0);
+ for(int i=2;i<15;i++)upperLevels[i]=2010+i;barTime+=300;RebuildTick();
+ assert(sendCalls==4&&CountPendingSide(true)==2&&CountPendingSide(false)==2);
+ // Existing LIMIT orders consume side capacity; other magics do not.
+ reset();ManagementMode=MANAGEMENT_MULTI_POINTS;MaxPendingPerSide=1;
+ orders={{1,OP_BUYLIMIT,MagicNumber,"XAUUSD",1950,1900,2100,.01}};
+ PlacePending(OP_BUYSTOP,2010);assert(sendCalls==0);PlacePending(OP_SELLSTOP,1990);assert(sendCalls==1);
+ reset();PlacePending(OP_BUYSTOP,2010);assert(lastExpiration==now+3600&&orders[0].expires==now+3600);
+ now+=3600;ask=2002;RebuildTick();assert(deleted==1&&orders.empty()&&sendCalls==1); // expiry before spread, no same-cycle refill
+ reset();denyExpiration=true;PlacePending(OP_BUYSTOP,2010);
+ assert(sendCalls==2&&orders.size()==1&&orders[0].expires==0); // explicit 147 -> GTC fallback only
+ now+=3600;assert(RebuildExpirePendingOrders()&&orders.empty());
+ reset();sendOK=false;PlacePending(OP_BUYSTOP,2010);assert(sendCalls==1); // timeout is NOT retried as expiry fallback
+ reset();PendingExpiryMinutes=0;PlacePending(OP_BUYSTOP,2010);assert(lastExpiration==0);
+ now+=100000;assert(!RebuildExpirePendingOrders()&&orders.size()==1);
+ reset();now=5000;
+ orders={{1,OP_BUYSTOP,MagicNumber,"XAUUSD",2010,1900,2100,.01,100,0},
+         {2,OP_SELLSTOP,999,"XAUUSD",1990,2100,1900,.01,100,0},
+         {3,OP_BUY,MagicNumber,"XAUUSD",1900,1800,2100,.01,100,0},
+         {4,OP_BUYLIMIT,MagicNumber,"OTHER",1950,1900,2100,.01,100,0}};
+ deleteOK=false;assert(!RebuildExpirePendingOrders()&&orders.size()==4);
+ deleteOK=true;assert(RebuildExpirePendingOrders()&&orders.size()==3&&deleted==1);
+ reset();PendingExpiryMinutes=-1;assert(!RebuildParametersValid());PendingExpiryMinutes=60;
+ MaxPendingPerSide=-1;assert(!RebuildParametersValid());MaxPendingPerSide=5;
  reset();TradeSymbol="OTHER";testing=true;assert(RebuildInit()==INIT_FAILED);testing=false;TradeSymbol="";
  ManagementMode=MANAGEMENT_PERCENT;StopLossPoints=0;assert(RebuildParametersValid()); // inactive points settings ignored
  ManagementMode=MANAGEMENT_POINTS;assert(!RebuildParametersValid());StopLossPoints=5000;

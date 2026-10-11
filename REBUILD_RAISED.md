@@ -1,4 +1,4 @@
-# Independent MT4 Fractals rebuild + Raised Solid / v1.110
+# Independent MT4 Fractals rebuild + Raised Solid / v1.120
 
 **File: [gold_x9_Rebuild_Raised.mq4](gold_x9_Rebuild_Raised.mq4)**
 
@@ -60,7 +60,7 @@ Points are broker points, not pips. For example, 5000 points is a price distance
 - Aged-loss handling defaults on: age 4 hours, minimum adverse move 0.05%. **It can alter TP and close a losing position** after the conditions are met. Disable `enableAgedLossCut` if not wanted.
 - Optional half-volume partial pay defaults off (`enablePartialPay=false`).
 - `exitTimeFrame=PERIOD_M1` determines the management interval. It does not change the Fractals entry timeframe, which remains the attached chart period.
-- POINTS-only inputs are ignored in this mode, and vice versa. No automatic pending expiry has been added: the supplied entry strategy uses non-expiring pending orders.
+- POINTS-only inputs are ignored in this mode, and vice versa. Pending expiry and per-side quotas now apply in all modes; see v1.120 below.
 
 ## Deliberate corrections to the supplied reconstruction
 
@@ -89,7 +89,7 @@ Points are broker points, not pips. For example, 5000 points is a price distance
 1. Copy **gold_x9_Rebuild_Raised.mq4** into `MQL4/Experts`.
 2. Compile in a current **MetaEditor 4** with standard `Canvas/Canvas.mqh`; no custom includes or images need installation. This file is MT4, not MT5.
 3. First use a demo account / visual Strategy Tester, with the broker's gold symbol and intended timeframe.
-4. Verify the Journal line: `Gold X9 Rebuild Raised v1.110 | MULTI POINTS` (or the selected mode).
+4. Verify the Journal line: `Gold X9 Rebuild Raised v1.120 | MULTI POINTS` (or the selected mode).
 5. Verify all four mode settings against actual entry/SL/TP prices, BE/trailing, and successful TRAIL updates. Test failed modifications and freeze restrictions.
 6. Verify max pending=1, max open/pending=0, spread filtering while management continues, OCO with single/mixed directions, and unrelated magic isolation.
 7. Test risk lots versus broker specs and below-minimum risk rejection. Test partial-pay/aged-loss only with controlled demo positions.
@@ -119,3 +119,29 @@ The suite has 19 tests. New coverage executes the reconstruction engine and the 
 - `OneEntryPerBar=true` limits scans, not order count: one scan can place multiple distinct levels. Live owned pending orders consume `MaxPendingOrders` slots across both directions. Open-position limits are rechecked per send, but existing pending orders can still fill concurrently beyond the open limit; there is no atomic broker-side reservation.
 - **RiskPercent is per order, not for the basket.** Ten orders at 1% each may expose roughly 10% initial SL risk before costs/slippage. Reassess sizing on demo before enabling multi-level entry.
 - Regression fixtures include ten distinct orders with both directions, normalized-price duplicates, open-position duplicate suppression, single-side levels, legacy OCO=true bypass, per-send caps, and both MULTI management variants. Native MetaEditor compilation and demo testing remain required.
+
+## v1.120 — pending expiration and independent direction quotas
+
+New inputs (apply to all four modes):
+
+| Input | Default | Meaning |
+|---|---|---|
+| `PendingExpiryMinutes` | 60 | Lifetime measured from order creation, not each scan. 0 disables new native expiry and local age-based expiry. |
+| `MaxPendingPerSide` | 5 | Independent cap for pending BUY STOP + BUY LIMIT, and separately SELL STOP + SELL LIMIT. 0 blocks all new pending orders. |
+
+`MaxPendingOrders=10` is still the combined cap. With the default side cap, five sells cannot use the five unused buy slots. A side without a valid Fractal is not filled artificially. A smaller total cap always wins; a larger total cap does not automatically increase the side cap. Both caps are checked before each send, including expiry fallback. Hover the PENDING ORDERS card for BUY/SELL counts, side quota, total limit and expiry setting.
+
+### Expiration behavior
+
+- New orders request broker-side expiration at server time plus the chosen minutes. This can expire even while the EA is offline, subject to the broker's support/rules.
+- Only explicit error **147** (expiration denied) triggers one retry without native expiration. Other errors, including ambiguous timeouts, are not retried via this fallback.
+- The EA checks its own symbol/magic pending orders on every chart tick, before spread/entry filters. It deletes orders whose age reaches the configured lifetime, including existing GTC orders, or whose native expiry has passed. Failed deletions are logged and retried on later ticks. Market positions and unrelated orders are untouched.
+- The local fallback requires a running EA, trading permission and incoming chart ticks. It cannot promise exact-minute expiry offline or when no ticks arrive. The display timer does not submit trade operations.
+- A successful local expiration skips new entry creation in that same tick; with `OneEntryPerBar=true` it also consumes the current bar evaluation. Native broker expiration or later scans can still lead to a new order at a still-valid Fractal. Expiration cancels an order; it is **not a permanent ban on that signal/price**.
+- On attachment or input change, existing matching orders are checked against the current lifetime. Turning expiry off does not remove broker expiration already embedded in existing orders.
+
+### Existing imbalance
+
+Installing this version does **not** immediately cancel nonexpired orders merely because one side exceeds its new quota. It blocks additional orders on that side; existing orders remain until fill, expiration or manual cancellation. Review existing same-magic orders before attaching. Increasing/decreasing the quotas does not close market positions. These are pending-direction limits, not guarantees of equal open BUY/SELL positions.
+
+Tests now cover single-sided level sets, reserved direction capacity, pending LIMIT orders counting toward a side, native expiration timestamps, 147-only fallback, expiry despite high spread, disabled expiry, failed deletion retries and ownership isolation. Existing tests still verify both management systems and all four UI themes. Native MetaEditor compilation/demo checks are still required.

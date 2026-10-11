@@ -53,7 +53,7 @@ def render():
     source=source.replace('IntegerToString(pendingBuy+pendingSell),UiAmber());',
                           'IntegerToString(pendingBuy+pendingSell)+"/"+IntegerToString(MaxPendingOrders),UiAmber());')
     source=source.replace('filterMatchMode = MATCH_MAGIC_OR_COMMENT','filterMatchMode = MATCH_MAGIC_ONLY')
-    source=source.replace('#property version     "6.750"','#property version     "1.110"')
+    source=source.replace('#property version     "6.750"','#property version     "1.120"')
     source=source.replace('#property description "gold X9 Full Focus design 4 + four themes + broker-data chart"',
                           '#property description "Independent MT4 Fractals rebuild + Raised Solid HUD + single/multi Fractals + POINTS/PERCENT management; demo test first."')
     source='''// Independent MT4 reconstruction; NOT the original video's source code.
