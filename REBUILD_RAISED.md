@@ -1,0 +1,108 @@
+# Independent MT4 Fractals rebuild + Raised Solid / v1.100
+
+**File: [gold_x9_Rebuild_Raised.mq4](gold_x9_Rebuild_Raised.mq4)**
+
+This is an independent reconstruction using the user's supplied Fractals/pending entry approach. It is **not the original video's source code**. The existing MT4 v6.750 interface and percentage manager are reused, but the old X9 entry strategy is not active or included as an alternate entry engine. The existing `gold_x9_FIXED.mq4`, TXT copy and MT5 port remain unchanged.
+
+## اختيار طريقة الإدارة
+
+من **Inputs → ManagementMode** اختر:
+
+| الخيار | الإعدادات المستخدمة |
+|---|---|
+| `MANAGEMENT_POINTS` — الافتراضي | الهدف والستوب والتعادل والتريلينغ بالنقاط، كما في الكود المرسل. |
+| `MANAGEMENT_PERCENT` | الهدف والستوب وإدارة الصفقة بالنسب المئوية من نسخة MT4 السابقة، مع خيارات salvage، aged-loss، والتريلينغ المرحلي والإغلاق الجزئي. |
+
+**الدخول نفسه في الحالتين:** Fractals + `EntryBufferPoints`، أوامر BUY STOP / SELL STOP، فلتر السبريد، وOCO الاختياري. لا يتم استخدام دخول النسخة السابقة أو فلاتر ساعاتها/إيقافها على أساس DD.
+
+- `MaxMarketPositions`: الحد الذي يمنع إنشاء أوامر جديدة عندما يصل عدد الصفقات المفتوحة إليه.
+- `MaxPendingOrders`: الحد الإجمالي للأوامر المعلقة التابعة لهذا الرمز والـMagic، وليس حدًا لكل اتجاه.
+- `UseBreakEven` و`UseTrailingStop`: يعملان في الخيارين.
+- `FixedLots` أو `UseRiskPercent` مع `RiskPercent`: نفس طريقة تحديد الحجم في الخيارين؛ حساب المخاطرة يستعمل المسافة الفعلية إلى SL بعد تقريب السعر.
+- عند تغيير الإدارة من Inputs، **تُدار الصفقات المفتوحة التابعة للإكسبرت بالطريقة الجديدة**. لا تُعاد كتابة مستويات SL/TP الأولية تلقائيًا للأوامر المعلقة القديمة. يُفضّل التبديل دون صفقات/أوامر مفتوحة على حساب تجريبي.
+
+## Interface and tracking
+
+- Full Focus **Raised Solid**, four themes: Graphite / Light / Midnight / Emerald.
+- Broker-data candles with MOVE, CENTER, +/−, Y+/Y−, history navigation, LIVE and BARS/ALL.
+- Open-position count **current / MaxMarketPositions** and pending count **current / MaxPendingOrders**.
+- Open-first, pageable table: ticket, type, lots, live P/L, estimated TP, SL and successfully confirmed trailing-stop amount.
+- Small colored level labels with grouping/collision avoidance, no diagonal label leaders and no closed-result boxes.
+- Separate TRADE TRACKER, live row, recent closed days, statistics and closed-result EMA/DD curve.
+- The active mode and engine state appear in the top status area (hover for the complete text).
+- Compact layout for chart-client areas down to **800×400**. Below that the existing resize fallback remains.
+- `ShowStatusComment=false` by default so native chart text does not overlap the dashboard. Set true only if the extra text is wanted.
+- Reporting defaults to **strict magic** (`MATCH_MAGIC_ONLY`) so dashboard counts match the strategy's owned-trade limits. Broader reporting filters do not grant permission to manage unrelated trades.
+
+## Mode settings
+
+### POINTS (default)
+
+Defaults match the supplied code:
+
+- `StopLossPoints=5000`, `TakeProfitPoints=10000`.
+- BE: trigger `4000`, lock `200` points.
+- Trailing: start `1200`, distance `800`, step `200` points.
+- Management on every tick, even while spread prevents new entries.
+
+Points are broker points, not pips. For example, 5000 points is a price distance of 5.000 on a 0.001-point symbol, but 50.00 on a 0.01-point symbol. Check the actual symbol specifications.
+
+### PERCENT
+
+- Initial SL distance = pending entry price × `stopLossPct / 100` (default 2%).
+- Initial TP distance = pending entry price × `takeProfitPct / 100` (default 0.7%).
+- BE trigger 0.1%, lock 0.025% of the open price.
+- Trail trigger 0.2%, base distance 0.2%, max trailing range 1% favorable movement, as in the previous manager.
+- Two-stage trailing is on by default: 0.30% below the 0.35% midpoint, 0.15% above it. Trailing distance uses the current exit quote.
+- Salvage trigger 1%, salvage target offset 0.15%; set `salvageTriggerPct=0` to disable that trigger.
+- Aged-loss handling defaults on: age 4 hours, minimum adverse move 0.05%. **It can alter TP and close a losing position** after the conditions are met. Disable `enableAgedLossCut` if not wanted.
+- Optional half-volume partial pay defaults off (`enablePartialPay=false`).
+- `exitTimeFrame=PERIOD_M1` determines the management interval. It does not change the Fractals entry timeframe, which remains the attached chart period.
+- POINTS-only inputs are ignored in this mode, and vice versa. No automatic pending expiry has been added: the supplied entry strategy uses non-expiring pending orders.
+
+## Deliberate corrections to the supplied reconstruction
+
+1. **OCO cleanup no longer recreates the opposite pending order later in the same tick.** It checks all owned market directions. With both BUY and SELL positions open, both pending entry directions are blocked while OCO is enabled. Opposite STOP/LIMIT orders are cleaned up, not manual/unrelated magic orders.
+2. Pending/open limits and per-type duplicates are rechecked immediately before **each** send. With `MaxPendingOrders=1`, a buy created earlier in the tick consumes the slot and prevents an additional sell.
+3. Entries require valid quotes/history and both Fractals. Missing history does not consume the current bar's evaluation.
+4. Initial and managed prices respect the symbol tick size. Too-small SL/TP distances are rejected rather than silently widened. Stop/freeze distances and no-loosening checks protect management; broker errors are logged.
+5. Volume rounding follows the broker step (including 0.001). Risk sizing uses the actual normalized entry-to-SL distance and tick-size price increment. If the risk-based lot is below broker minimum, the order is **skipped**, rather than raising the risk to meet minimum volume. Fixed-lot sizing retains minimum/maximum clamping.
+6. Margin is checked before sending. A trailing amount is recorded only after successful `OrderModify` in either mode.
+7. Percentage management keeps the prior manager with shared BE/trailing switches, configured slippage, broker volume precision and a stop-no-loosening safeguard after broker-distance adjustments.
+
+**Limits are local EA checks, not broker-side reservations.** Existing pending orders can fill concurrently and push open positions above `MaxMarketPositions`; lowering a limit does not close existing trades or cancel all pending orders. OCO is client-side, requires a running terminal/ticks, and cannot guarantee atomic cancellation before another fill. Do not run multiple EAs managing the same symbol/magic.
+
+`OneEntryPerBar` means **one entry evaluation per bar**, as in the supplied code; that evaluation may submit both a buy and a sell when allowed. At most one owned pending order of each STOP type is created by this engine. Changing the parameter does not remove the per-type duplicate check.
+
+## Reporting and state caveats
+
+- P/L, TP/SL and trailing money estimates retain the previous dashboard commission convention: estimated 0.07 per 0.01 lot in account currency, plus broker profit/swap. They are not a promise of exact broker realized costs.
+- DD is displayed as an account-level metric; old entry-blocking DD/equity/dead-window gates are deliberately disabled to preserve the selected Fractals entry strategy.
+- Chart view, successful-trailing evidence, partial-pay keys and DD session baseline are session-local. Restarting/changing inputs resets them; partial-pay behavior must be demo tested across restarts. The legacy partial-pay key uses entry time/price.
+- `MagicNumber=630063` and comment prefix `GoldX9_MT4_Rebuild` match the supplied reconstruction, so existing same-symbol/same-magic trades may be managed when attaching this build. The old EA's default magic 123457 is different.
+- A non-chart `TradeSymbol` is supported outside the tester, but entry/management still run on chart ticks. Prefer attaching to the traded symbol's chart. In the tester, leave `TradeSymbol` blank or equal to the tested symbol.
+
+## Installation and required demo checks
+
+1. Copy **gold_x9_Rebuild_Raised.mq4** into `MQL4/Experts`.
+2. Compile in a current **MetaEditor 4** with standard `Canvas/Canvas.mqh`; no custom includes or images need installation. This file is MT4, not MT5.
+3. First use a demo account / visual Strategy Tester, with the broker's gold symbol and intended timeframe.
+4. Verify the Journal line: `Gold X9 Rebuild Raised v1.100 | POINTS` (or `PERCENT`).
+5. Verify both mode settings against actual entry/SL/TP prices, BE/trailing, and successful TRAIL updates. Test failed modifications and freeze restrictions.
+6. Verify max pending=1, max open/pending=0, spread filtering while management continues, OCO with single/mixed directions, and unrelated magic isolation.
+7. Test risk lots versus broker specs and below-minimum risk rejection. Test partial-pay/aged-loss only with controlled demo positions.
+8. Check all four themes, table paging, Terminal/Tester resize, and that the closed curve changes only with closed results.
+
+**No MetaEditor/MT4 broker terminal is available in this workspace.** Local tests are not native MQL compilation or execution validation. This is not a live-readiness or profitability claim.
+
+## Reproducible build and tests
+
+Editable inputs/engine: `rebuild/RebuildInputs.mqh` and `rebuild/RebuildEngine.mqh`. The generator copies the current MT4 interface, removes the old entry engine and embeds the independent engine into the standalone deliverable.
+
+```sh
+python tools/build_rebuild_mt4.py
+python tools/build_rebuild_mt4.py --check
+python -m unittest discover -s tests -v
+```
+
+The suite has 19 tests. New coverage executes the reconstruction engine and the actual reused percentage manager against C++ terminal stubs, tests both price formulas, mode routing, volume/risk sizing, OCO, combined limits, no-repeat-per-bar behavior, spread filtering, failed modification/trailing evidence, partial pay and symbol validation. The existing chart/four-theme geometry tests are also run against the generated rebuild source.

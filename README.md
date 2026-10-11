@@ -1,5 +1,9 @@
 # NEW GOLD EA BY AITCHIKH — X9 Full Focus
 
+## Independent Fractals rebuild (MT4)
+
+**[gold_x9_Rebuild_Raised.mq4](gold_x9_Rebuild_Raised.mq4)** — v1.100: the supplied Fractals/pending-entry reconstruction with the Raised Solid interface, tracking, open/pending limit counters, and a `ManagementMode` choice between POINTS and the previous MT4 percentage manager. The entry strategy stays the reconstruction in both modes. Read **[REBUILD_RAISED.md](REBUILD_RAISED.md)** for settings, OCO/limit corrections, safety differences and required demo checks. This is a separate EA, not a replacement of the existing MT4/MT5 files.
+
 ## MT5 hedging version
 
 **[gold_x9_MT5.mq5](gold_x9_MT5.mq5)** — v7.001 source port with the same Raised Solid interface and trading strategy. Read **[MT5_PORT.md](MT5_PORT.md)** before installation. Hedging only; real accounts are locked by default (`mt5AllowLiveTrading=false`). Native MetaEditor 5 compilation and tester/demo validation are still required; no EX5 binary or live-readiness claim is supplied.
