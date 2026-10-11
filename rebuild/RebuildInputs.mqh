@@ -2,9 +2,11 @@
 enum RebuildManagementMode
   {
    MANAGEMENT_POINTS=0,   // Original reconstruction: SL/TP/BE/trailing in broker points
-   MANAGEMENT_PERCENT=1   // Previous X9 MT4: price-percentage management
+   MANAGEMENT_PERCENT=1,  // Single-level entry + percentage management
+   MANAGEMENT_MULTI_POINTS=2, // Multiple distinct Fractals + points management
+   MANAGEMENT_MULTI_PERCENT=3 // Multiple distinct Fractals + percentage management
   };
-input RebuildManagementMode ManagementMode=MANAGEMENT_POINTS;
+input RebuildManagementMode ManagementMode=MANAGEMENT_MULTI_POINTS;
 input string TradeSymbol="";              // Blank = chart/tester symbol
 input int MagicNumber=630063;
 input double FixedLots=0.01;
@@ -18,7 +20,7 @@ input bool EnableBuy=true;
 input bool EnableSell=true;
 input int FractalLookbackBars=100;
 input int EntryBufferPoints=30;
-input bool DeleteOppositePending=true;
+input bool DeleteOppositePending=false;    // Single-level modes only; MULTI always allows both sides
 input bool OneEntryPerBar=true;
 input bool ShowStatusComment=false;        // Optional native text; dashboard replaces it by default
 input bool UseBreakEven=true;              // Applies in either management mode

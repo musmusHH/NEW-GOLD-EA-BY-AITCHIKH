@@ -1,4 +1,4 @@
-# Independent MT4 Fractals rebuild + Raised Solid / v1.100
+# Independent MT4 Fractals rebuild + Raised Solid / v1.110
 
 **File: [gold_x9_Rebuild_Raised.mq4](gold_x9_Rebuild_Raised.mq4)**
 
@@ -10,10 +10,12 @@ This is an independent reconstruction using the user's supplied Fractals/pending
 
 | الخيار | الإعدادات المستخدمة |
 |---|---|
-| `MANAGEMENT_POINTS` — الافتراضي | الهدف والستوب والتعادل والتريلينغ بالنقاط، كما في الكود المرسل. |
-| `MANAGEMENT_PERCENT` | الهدف والستوب وإدارة الصفقة بالنسب المئوية من نسخة MT4 السابقة، مع خيارات salvage، aged-loss، والتريلينغ المرحلي والإغلاق الجزئي. |
+| `MANAGEMENT_POINTS` | الهدف والستوب والتعادل والتريلينغ بالنقاط، كما في الكود المرسل. |
+| `MANAGEMENT_PERCENT` | دخول فردي وإدارة بالنسب من نسخة MT4 السابقة. |
+| `MANAGEMENT_MULTI_POINTS` — الافتراضي الجديد | أوامر متعددة عند مستويات Fractals مختلفة، وإدارة بالنقاط. |
+| `MANAGEMENT_MULTI_PERCENT` | أوامر متعددة عند مستويات Fractals مختلفة، وإدارة بالنسب. |
 
-**الدخول نفسه في الحالتين:** Fractals + `EntryBufferPoints`، أوامر BUY STOP / SELL STOP، فلتر السبريد، وOCO الاختياري. لا يتم استخدام دخول النسخة السابقة أو فلاتر ساعاتها/إيقافها على أساس DD.
+**قاعدة الدخول في الخيارات الأربعة:** Fractals + `EntryBufferPoints` وأوامر BUY STOP / SELL STOP وفلتر السبريد. الخياران الفرديان يحتفظان بأمر معلّق واحد لكل اتجاه. الخياران MULTI يفحصان مستويات مختلفة حتى الحد المحدد، ويسمحان بالاتجاهين معًا دون OCO. لا يتم استخدام دخول النسخة السابقة أو فلاتر ساعاتها/إيقافها على أساس DD.
 
 - `MaxMarketPositions`: الحد الذي يمنع إنشاء أوامر جديدة عندما يصل عدد الصفقات المفتوحة إليه.
 - `MaxPendingOrders`: الحد الإجمالي للأوامر المعلقة التابعة لهذا الرمز والـMagic، وليس حدًا لكل اتجاه.
@@ -36,7 +38,7 @@ This is an independent reconstruction using the user's supplied Fractals/pending
 
 ## Mode settings
 
-### POINTS (default)
+### POINTS / MULTI POINTS
 
 Defaults match the supplied code:
 
@@ -47,7 +49,7 @@ Defaults match the supplied code:
 
 Points are broker points, not pips. For example, 5000 points is a price distance of 5.000 on a 0.001-point symbol, but 50.00 on a 0.01-point symbol. Check the actual symbol specifications.
 
-### PERCENT
+### PERCENT / MULTI PERCENT
 
 - Initial SL distance = pending entry price × `stopLossPct / 100` (default 2%).
 - Initial TP distance = pending entry price × `takeProfitPct / 100` (default 0.7%).
@@ -62,7 +64,7 @@ Points are broker points, not pips. For example, 5000 points is a price distance
 
 ## Deliberate corrections to the supplied reconstruction
 
-1. **OCO cleanup no longer recreates the opposite pending order later in the same tick.** It checks all owned market directions. With both BUY and SELL positions open, both pending entry directions are blocked while OCO is enabled. Opposite STOP/LIMIT orders are cleaned up, not manual/unrelated magic orders.
+1. **Single-level modes only: OCO cleanup no longer recreates the opposite pending order later in the same tick.** It checks all owned market directions. With both BUY and SELL positions open, both pending entry directions are blocked while OCO is enabled. Opposite STOP/LIMIT orders are cleaned up, not manual/unrelated magic orders.
 2. Pending/open limits and per-type duplicates are rechecked immediately before **each** send. With `MaxPendingOrders=1`, a buy created earlier in the tick consumes the slot and prevents an additional sell.
 3. Entries require valid quotes/history and both Fractals. Missing history does not consume the current bar's evaluation.
 4. Initial and managed prices respect the symbol tick size. Too-small SL/TP distances are rejected rather than silently widened. Stop/freeze distances and no-loosening checks protect management; broker errors are logged.
@@ -70,9 +72,9 @@ Points are broker points, not pips. For example, 5000 points is a price distance
 6. Margin is checked before sending. A trailing amount is recorded only after successful `OrderModify` in either mode.
 7. Percentage management keeps the prior manager with shared BE/trailing switches, configured slippage, broker volume precision and a stop-no-loosening safeguard after broker-distance adjustments.
 
-**Limits are local EA checks, not broker-side reservations.** Existing pending orders can fill concurrently and push open positions above `MaxMarketPositions`; lowering a limit does not close existing trades or cancel all pending orders. OCO is client-side, requires a running terminal/ticks, and cannot guarantee atomic cancellation before another fill. Do not run multiple EAs managing the same symbol/magic.
+**Limits are local EA checks, not broker-side reservations.** Existing pending orders can fill concurrently and push open positions above `MaxMarketPositions`; lowering a limit does not close existing trades or cancel all pending orders. In the SINGLE modes, optional OCO is client-side, requires a running terminal/ticks, and cannot guarantee atomic cancellation before another fill. Do not run multiple EAs managing the same symbol/magic.
 
-`OneEntryPerBar` means **one entry evaluation per bar**, as in the supplied code; that evaluation may submit both a buy and a sell when allowed. At most one owned pending order of each STOP type is created by this engine. Changing the parameter does not remove the per-type duplicate check.
+`OneEntryPerBar` means **one entry evaluation per bar**, as in the supplied code; that evaluation may submit both a buy and a sell when allowed. In SINGLE modes only, at most one owned pending order of each STOP type is created. MULTI modes can submit several distinct levels per evaluation, always rechecking the combined pending limit and open-position limit before each send.
 
 ## Reporting and state caveats
 
@@ -87,8 +89,8 @@ Points are broker points, not pips. For example, 5000 points is a price distance
 1. Copy **gold_x9_Rebuild_Raised.mq4** into `MQL4/Experts`.
 2. Compile in a current **MetaEditor 4** with standard `Canvas/Canvas.mqh`; no custom includes or images need installation. This file is MT4, not MT5.
 3. First use a demo account / visual Strategy Tester, with the broker's gold symbol and intended timeframe.
-4. Verify the Journal line: `Gold X9 Rebuild Raised v1.100 | POINTS` (or `PERCENT`).
-5. Verify both mode settings against actual entry/SL/TP prices, BE/trailing, and successful TRAIL updates. Test failed modifications and freeze restrictions.
+4. Verify the Journal line: `Gold X9 Rebuild Raised v1.110 | MULTI POINTS` (or the selected mode).
+5. Verify all four mode settings against actual entry/SL/TP prices, BE/trailing, and successful TRAIL updates. Test failed modifications and freeze restrictions.
 6. Verify max pending=1, max open/pending=0, spread filtering while management continues, OCO with single/mixed directions, and unrelated magic isolation.
 7. Test risk lots versus broker specs and below-minimum risk rejection. Test partial-pay/aged-loss only with controlled demo positions.
 8. Check all four themes, table paging, Terminal/Tester resize, and that the closed curve changes only with closed results.
@@ -106,3 +108,14 @@ python -m unittest discover -s tests -v
 ```
 
 The suite has 19 tests. New coverage executes the reconstruction engine and the actual reused percentage manager against C++ terminal stubs, tests both price formulas, mode routing, volume/risk sizing, OCO, combined limits, no-repeat-per-bar behavior, spread filtering, failed modification/trailing evidence, partial pay and symbol validation. The existing chart/four-theme geometry tests are also run against the generated rebuild source.
+
+## v1.110 — multiple Fractal levels inside ManagementMode
+
+- Enum values 0/1 retain the prior single-level POINTS/PERCENT behavior; values 2/3 add MULTI POINTS/MULTI PERCENT. New installations default to MULTI POINTS. Older saved presets may still select a single-level mode: explicitly choose the new mode in Inputs.
+- MULTI scans bars from newest to oldest (shift 2 through the available lookback), trying upper and lower levels at each shift. This prevents scanning all buy levels before considering any sells; it does not guarantee a 50/50 split. Each level still must be on the valid side of the market, satisfy broker stop/spread/margin constraints, and pass risk sizing. Ten is a cap, not a target or ten orders per direction.
+- Every MULTI send checks the normalized entry against all currently open/matching pending orders and market positions for the same symbol and magic. Levels within half a broker tick are duplicates, including repeated Fractals that round to the same tick. Unrelated magic/symbol orders do not block entry. No duplicate-by-type restriction applies in MULTI.
+- Duplicate checking uses current broker entry prices, not historical or pre-slippage prices. Closed/deleted levels can be reused on a later evaluation. This is not a permanent ban on trading a price again.
+- MULTI always bypasses opposite-side deletion/blocking, even if an old preset has `DeleteOppositePending=true`. That input now applies only to SINGLE modes and defaults to false. Both directions still respect `EnableBuy`/`EnableSell` and broker/account hedging restrictions.
+- `OneEntryPerBar=true` limits scans, not order count: one scan can place multiple distinct levels. Live owned pending orders consume `MaxPendingOrders` slots across both directions. Open-position limits are rechecked per send, but existing pending orders can still fill concurrently beyond the open limit; there is no atomic broker-side reservation.
+- **RiskPercent is per order, not for the basket.** Ten orders at 1% each may expose roughly 10% initial SL risk before costs/slippage. Reassess sizing on demo before enabling multi-level entry.
+- Regression fixtures include ten distinct orders with both directions, normalized-price duplicates, open-position duplicate suppression, single-side levels, legacy OCO=true bypass, per-send caps, and both MULTI management variants. Native MetaEditor compilation and demo testing remain required.

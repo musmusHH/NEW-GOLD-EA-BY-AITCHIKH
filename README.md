@@ -2,7 +2,7 @@
 
 ## Independent Fractals rebuild (MT4)
 
-**[gold_x9_Rebuild_Raised.mq4](gold_x9_Rebuild_Raised.mq4)** — v1.100: the supplied Fractals/pending-entry reconstruction with the Raised Solid interface, tracking, open/pending limit counters, and a `ManagementMode` choice between POINTS and the previous MT4 percentage manager. The entry strategy stays the reconstruction in both modes. Read **[REBUILD_RAISED.md](REBUILD_RAISED.md)** for settings, OCO/limit corrections, safety differences and required demo checks. This is a separate EA, not a replacement of the existing MT4/MT5 files.
+**[gold_x9_Rebuild_Raised.mq4](gold_x9_Rebuild_Raised.mq4)** — v1.110: the supplied Fractals/pending-entry reconstruction with the Raised Solid interface, tracking, open/pending limit counters, and four `ManagementMode` choices: single-level POINTS/PERCENT and multi-level POINTS/PERCENT. MULTI scans distinct Fractal prices without duplicate live entry levels and permits both BUY and SELL. New installations default to MULTI POINTS. Read **[REBUILD_RAISED.md](REBUILD_RAISED.md)** for settings, OCO/limit corrections, safety differences and required demo checks. This is a separate EA, not a replacement of the existing MT4/MT5 files.
 
 ## MT5 hedging version
 

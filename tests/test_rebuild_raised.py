@@ -43,6 +43,7 @@ class RebuildRaisedTests(unittest.TestCase):
         stub=r'''
 #include <string>
 #include <vector>
+#include <map>
 #include <cmath>
 #include <algorithm>
 #include <cassert>
@@ -64,6 +65,7 @@ struct Order {int ticket,type,magic;string symbol;double entry,sl,tp,lots;};vect
 int selected=0,nextTicket=100,sendCalls=0,modifyCalls=0,trailCalls=0,percentCalls=0,deleted=0;
 bool testing=false,symbolOK=true,sendOK=true,modifyOK=true,marginOK=true;
 double bid=2000,ask=2000.20,point=.01,tick=.01,lotStep=.01,minLot=.01,maxLot=100,balance=10000;
+bool useLevels=false;map<int,double> upperLevels,lowerLevels;
 int availableBars=200;datetime now=1000,barTime=900;double upper=2010,lower=1990;int lastError=0;
 int OrdersTotal(){return orders.size();}
 bool OrderSelect(int v,int mode,int){if(mode==SELECT_BY_TICKET){for(int i=0;i<int(orders.size());i++)if(orders[i].ticket==v){selected=i;return true;}return false;}if(v<0||v>=int(orders.size()))return false;selected=v;return true;}
@@ -94,7 +96,7 @@ double NormalizeDouble(double v,int n){double k=pow(10,n);return round(v*k)/k;}
 int StringLen(string s){return s.size();}string IntegerToString(int v){return to_string(v);}
 int Period(){return 5;}int PeriodSeconds(int){return 60;}datetime TimeCurrent(){return now;}
 datetime iTime(string,int,int){return barTime;}int iBars(string,int){return availableBars;}
-double iFractals(string,int,int mode,int shift){return shift==2?(mode==MODE_UPPER?upper:lower):0;}
+double iFractals(string,int,int mode,int shift){if(useLevels)return mode==MODE_UPPER?upperLevels[shift]:lowerLevels[shift];return shift==2?(mode==MODE_UPPER?upper:lower):0;}
 string Symbol(){return "XAUUSD";}bool IsTesting(){return testing;}bool SymbolSelect(string,bool){return symbolOK;}
 double SymbolAsk(){return ask;}double SymbolBid(){return bid;}
 double SymbolPoint(){return point;}int SymbolDigits(){return 2;}double SymbolStopsLevel(){return point*50;}double SymbolFreezeLevel(){return point*30;}
@@ -110,6 +112,7 @@ void reset(){orders.clear();sendCalls=modifyCalls=trailCalls=percentCalls=delete
  g_symbol="XAUUSD";g_lastBarTime=0;lastExitManageTime=0;ManagementMode=MANAGEMENT_POINTS;UseRiskPercent=false;
  MaxMarketPositions=10;MaxPendingOrders=10;DeleteOppositePending=true;OneEntryPerBar=true;EnableBuy=EnableSell=true;
  UseBreakEven=UseTrailingStop=true;enablePartialPay=false;enableAgedLossCut=true;for(auto &k:g_partialKeys)k="";bid=2000;ask=2000.20;point=tick=.01;lotStep=minLot=.01;maxLot=100;
+ useLevels=false;upperLevels.clear();lowerLevels.clear();
  availableBars=200;upper=2010;lower=1990;barTime=900;now=1000;
 }
 int main(){
@@ -163,6 +166,38 @@ int main(){
  reset();ManagementMode=MANAGEMENT_PERCENT;enablePartialPay=true;
  orders={{1,OP_BUY,MagicNumber,"XAUUSD",1990,1950,2050,.02}};RebuildTick();assert(orders[0].lots==.01);
  now+=60;RebuildTick();assert(orders[0].lots==.01);
+ // Multi-level entry populates 10 unique orders, both sides, and ignores stale OCO=true.
+ reset();ManagementMode=MANAGEMENT_MULTI_POINTS;useLevels=true;DeleteOppositePending=true;
+ for(int i=2;i<12;i++){upperLevels[i]=2010+i;lowerLevels[i]=1990-i;}
+ RebuildTick();assert(sendCalls==10&&CountPendingOrders()==10&&deleted==0);
+ int buys=0,sells=0;for(auto a:orders){buys+=a.type==OP_BUYSTOP;sells+=a.type==OP_SELLSTOP;
+   assert(abs(abs(a.entry-a.sl)-50)<1e-6);for(auto b:orders)if(a.ticket!=b.ticket)assert(abs(a.entry-b.entry)>.005);}
+ assert(buys==5&&sells==5);barTime+=300;RebuildTick();assert(sendCalls==10);
+ // Repeated prices, including distinct raw levels rounding to one tick, are deduplicated.
+ reset();ManagementMode=MANAGEMENT_MULTI_POINTS;useLevels=true;
+ upperLevels[2]=2010.001;upperLevels[3]=2010.003;upperLevels[4]=2010.001;
+ lowerLevels[2]=1990;lowerLevels[3]=1990;RebuildTick();assert(sendCalls==2);
+ barTime+=300;RebuildTick();assert(sendCalls==2);
+ // Existing owned market entries occupy levels, while both directions remain allowed.
+ reset();ManagementMode=MANAGEMENT_MULTI_POINTS;useLevels=true;
+ orders={{1,OP_BUY,MagicNumber,"XAUUSD",2010.30,1900,2100,.01}};
+ upperLevels[2]=2010;upperLevels[3]=2011;lowerLevels[2]=1990;
+ RebuildTick();assert(sendCalls==2&&HasPendingType(OP_SELLSTOP)&&deleted==0);
+ assert(RebuildDirectionAllowed(OP_BUYSTOP)&&RebuildDirectionAllowed(OP_SELLSTOP));
+ // Multi percent uses the same level scanner but percentage initial stops and manager.
+ reset();ManagementMode=MANAGEMENT_MULTI_PERCENT;useLevels=true;MaxPendingOrders=3;
+ for(int i=2;i<6;i++){upperLevels[i]=2010+i;lowerLevels[i]=1990-i;}
+ RebuildTick();assert(sendCalls==3&&percentCalls==1&&CountPendingOrders()==3);
+ for(auto a:orders)assert(abs(abs(a.entry-a.sl)-a.entry*.02)<.011);
+ // A single enabled side does not require an opposite fractal in multi mode.
+ reset();ManagementMode=MANAGEMENT_MULTI_POINTS;useLevels=true;EnableSell=false;
+ for(int i=2;i<12;i++)upperLevels[i]=2010+i;
+ RebuildTick();assert(sendCalls==10);for(auto a:orders)assert(a.type==OP_BUYSTOP);
+ reset();ManagementMode=MANAGEMENT_MULTI_POINTS;MaxPendingOrders=1;RebuildTick();assert(sendCalls==1);
+ reset();ManagementMode=MANAGEMENT_MULTI_POINTS;MaxMarketPositions=1;
+ orders={{1,OP_BUY,MagicNumber,"XAUUSD",2010,1900,2100,.01}};RebuildTick();assert(sendCalls==0);
+ reset();ManagementMode=MANAGEMENT_MULTI_PERCENT;StopLossPoints=0;assert(RebuildParametersValid());
+ StopLossPoints=5000;ManagementMode=(RebuildManagementMode)99;assert(!RebuildParametersValid());
  reset();TradeSymbol="OTHER";testing=true;assert(RebuildInit()==INIT_FAILED);testing=false;TradeSymbol="";
  ManagementMode=MANAGEMENT_PERCENT;StopLossPoints=0;assert(RebuildParametersValid()); // inactive points settings ignored
  ManagementMode=MANAGEMENT_POINTS;assert(!RebuildParametersValid());StopLossPoints=5000;

@@ -1,7 +1,25 @@
-// Shared Fractals entry engine; selecting management never selects a different entry strategy.
+// Fractals entry: single-level or multi-level, each with points/percentage management.
 string g_symbol;
 datetime g_lastBarTime=0;
 string g_rebuildStatus="READY";
+
+bool RebuildMultiMode()
+  {
+   return ManagementMode==MANAGEMENT_MULTI_POINTS || ManagementMode==MANAGEMENT_MULTI_PERCENT;
+  }
+bool RebuildPointsMode()
+  {
+   return ManagementMode==MANAGEMENT_POINTS || ManagementMode==MANAGEMENT_MULTI_POINTS;
+  }
+bool RebuildOCOEnabled()
+  {
+   return DeleteOppositePending && !RebuildMultiMode();
+  }
+string RebuildModeLabel()
+  {
+   if(RebuildMultiMode())return RebuildPointsMode()?"MULTI POINTS":"MULTI PERCENT";
+   return RebuildPointsMode()?"SINGLE POINTS":"SINGLE PERCENT";
+  }
 
 bool RebuildOwnOrder()
   {
@@ -40,7 +58,7 @@ bool RebuildDirectionAllowed(int type)
    if(type!=OP_BUYSTOP && type!=OP_SELLSTOP)return false;
    if(type==OP_BUYSTOP && !EnableBuy)return false;
    if(type==OP_SELLSTOP && !EnableSell)return false;
-   if(!DeleteOppositePending)return true;
+   if(!RebuildOCOEnabled())return true;
    return !RebuildHasMarketSide(type==OP_BUYSTOP?OP_SELL:OP_BUY);
   }
 void DeleteOppositePendingOrders()
@@ -107,24 +125,39 @@ bool RebuildStops(int type,double entry,double &sl,double &tp)
   {
    double point=MarketInfo(g_symbol,MODE_POINT);
    if(entry<=0 || point<=0)return false;
-   double loss=ManagementMode==MANAGEMENT_POINTS?StopLossPoints*point:entry*stopLossPct/100.0;
-   double gain=ManagementMode==MANAGEMENT_POINTS?TakeProfitPoints*point:entry*takeProfitPct/100.0;
+   double loss=RebuildPointsMode()?StopLossPoints*point:entry*stopLossPct/100.0;
+   double gain=RebuildPointsMode()?TakeProfitPoints*point:entry*takeProfitPct/100.0;
    bool buy=type==OP_BUYSTOP;
    sl=RebuildPrice(buy?entry-loss:entry+loss,!buy);
    tp=RebuildPrice(buy?entry+gain:entry-gain,buy);
    double minimum=MarketInfo(g_symbol,MODE_STOPLEVEL)*point;
    return sl>0 && tp>0 && loss>0 && gain>0 && MathAbs(entry-sl)+point*1e-6>=minimum && MathAbs(entry-tp)+point*1e-6>=minimum;
   }
+// Compare broker-normalized entry levels against ALL owned live orders/positions.
+// History is intentionally excluded: a closed/canceled level may be used again.
+bool RebuildHasEntryPrice(double entry)
+  {
+   double tolerance=RebuildTickSize()*0.5+1e-9;
+   for(int i=OrdersTotal()-1;i>=0;i--)
+     {
+      if(!OrderSelect(i,SELECT_BY_POS,MODE_TRADES) || !RebuildOwnOrder())continue;
+      if(OrderType()<OP_BUY || OrderType()>OP_SELLSTOP)continue;
+      if(MathAbs(OrderOpenPrice()-entry)<=tolerance)return true;
+     }
+   return false;
+  }
+
 void PlacePending(int type,double entry)
   {
    // Recheck for EACH send; a buy placed earlier this tick consumes a pending slot.
    if(!RebuildDirectionAllowed(type) || CountMarketPositions()>=MaxMarketPositions ||
-      CountPendingOrders()>=MaxPendingOrders || HasPendingType(type))return;
+      CountPendingOrders()>=MaxPendingOrders || (!RebuildMultiMode() && HasPendingType(type)))return;
    RefreshRates();
    double point=MarketInfo(g_symbol,MODE_POINT),ask=MarketInfo(g_symbol,MODE_ASK),bid=MarketInfo(g_symbol,MODE_BID);
    if(point<=0 || ask<=0 || bid<=0)return;
    if(MaxSpreadPoints>0 && (ask-bid)/point>MaxSpreadPoints+1e-6)return;
    entry=RebuildPrice(entry,type==OP_BUYSTOP);
+   if(RebuildMultiMode() && RebuildHasEntryPrice(entry))return;
    double minimum=MarketInfo(g_symbol,MODE_STOPLEVEL)*point;
    if(type==OP_BUYSTOP && entry<=ask+minimum)return;
    if(type==OP_SELLSTOP && entry>=bid-minimum)return;
@@ -136,13 +169,35 @@ void PlacePending(int type,double entry)
    int side=type==OP_BUYSTOP?OP_BUY:OP_SELL;
    double free=AccountFreeMarginCheck(g_symbol,side,lots);
    if(free<=0 || GetLastError()==134){g_rebuildStatus="INSUFFICIENT MARGIN";return;}
-   string comment=tradeComment+(ManagementMode==MANAGEMENT_POINTS?" PTS":" PCT");
+   string comment=tradeComment+(RebuildPointsMode()?" PTS":" PCT");
    ResetLastError();
    int ticket=OrderSend(g_symbol,type,lots,entry,SlippagePoints,sl,tp,comment,MagicNumber,0,
                         type==OP_BUYSTOP?clrDodgerBlue:clrTomato);
    if(ticket<0){g_rebuildStatus="ORDER REJECTED";Print("Rebuild OrderSend failed: ",GetLastError());}
    else {g_rebuildStatus="PENDING PLACED";Print("Rebuild pending #",ticket," SL=",sl," TP=",tp);}
   }
+void RebuildScanMultipleLevels()
+  {
+   int last=(int)MathMin(FractalLookbackBars,iBars(g_symbol,Period())-3);
+   double point=MarketInfo(g_symbol,MODE_POINT);
+   bool found=false;
+   // Newest to oldest; try both sides at each shift instead of filling all slots with buys first.
+   for(int shift=2;shift<=last;shift++)
+     {
+      if(CountPendingOrders()>=MaxPendingOrders || CountMarketPositions()>=MaxMarketPositions)break;
+      double upper=iFractals(g_symbol,Period(),MODE_UPPER,shift);
+      double lower=iFractals(g_symbol,Period(),MODE_LOWER,shift);
+      if(upper>0 && upper!=EMPTY_VALUE && RebuildDirectionAllowed(OP_BUYSTOP))
+        {found=true;PlacePending(OP_BUYSTOP,upper+EntryBufferPoints*point);}
+      if(lower>0 && lower!=EMPTY_VALUE && RebuildDirectionAllowed(OP_SELLSTOP))
+        {found=true;PlacePending(OP_SELLSTOP,lower-EntryBufferPoints*point);}
+     }
+   if(!found)g_rebuildStatus="WAITING FOR FRACTALS";
+   else if(CountPendingOrders()>=MaxPendingOrders || CountMarketPositions()>=MaxMarketPositions)
+      g_rebuildStatus="LIMIT REACHED";
+   if(OneEntryPerBar && found)g_lastBarTime=iTime(g_symbol,Period(),0);
+  }
+
 void ManageOpenTrades()
   {
    double point=MarketInfo(g_symbol,MODE_POINT);
@@ -181,11 +236,12 @@ void ManageOpenTrades()
   }
 bool RebuildParametersValid()
   {
-   if(ManagementMode!=MANAGEMENT_POINTS && ManagementMode!=MANAGEMENT_PERCENT)return false;
+   if(ManagementMode!=MANAGEMENT_POINTS && ManagementMode!=MANAGEMENT_PERCENT &&
+      ManagementMode!=MANAGEMENT_MULTI_POINTS && ManagementMode!=MANAGEMENT_MULTI_PERCENT)return false;
    if(MagicNumber<=0 || MaxMarketPositions<0 || MaxPendingOrders<0 || FractalLookbackBars<2 ||
       EntryBufferPoints<0 || SlippagePoints<0 || MaxSpreadPoints<0)return false;
    if((!UseRiskPercent && FixedLots<=0) || (UseRiskPercent && (RiskPercent<=0 || RiskPercent>100)))return false;
-   if(ManagementMode==MANAGEMENT_POINTS)
+   if(RebuildPointsMode())
       return StopLossPoints>0 && TakeProfitPoints>0 &&
          (!UseBreakEven || (BreakEvenTriggerPoints>=0 && BreakEvenLockPoints>=0 && BreakEvenLockPoints<BreakEvenTriggerPoints)) &&
          (!UseTrailingStop || (TrailingStartPoints>=0 && TrailingDistancePoints>0 && TrailingStepPoints>=0));
@@ -225,13 +281,13 @@ int RebuildInit()
    if(showEquityCurve)SeedEquityHistory();
    HudTick(true);UpdateStatus();EqDraw();PanelDraw(true);
    if(PanelEnabled())EventSetTimer(1);
-   Print("Gold X9 Rebuild Raised v1.100 | ",ManagementMode==MANAGEMENT_POINTS?"POINTS":"PERCENT"," | ",g_symbol);
+   Print("Gold X9 Rebuild Raised v1.110 | ",RebuildModeLabel()," | ",g_symbol);
    return INIT_SUCCEEDED;
   }
 void UpdateStatus()
   {
    HudTick(false);
-   string mode=ManagementMode==MANAGEMENT_POINTS?"POINTS":"PERCENT";
+   string mode=RebuildModeLabel();
    ObjectSetString(0,HUD_PREFIX+"top_pending",OBJPROP_TOOLTIP,"Owned pending limit: "+IntegerToString(MaxPendingOrders));
    HudSetText(HUD_PREFIX+"top_status",mode+" | "+g_rebuildStatus,g_rebuildStatus=="READY"?UiGood():UiAmber());
    if(ShowStatusComment)
@@ -241,14 +297,14 @@ void UpdateStatus()
 void RebuildTick()
   {
    RefreshRates();activeStopLevel=SymbolStopsLevel();activeFreezeLevel=SymbolFreezeLevel();
-   if(ManagementMode==MANAGEMENT_POINTS)ManageOpenTrades();
+   if(RebuildPointsMode())ManageOpenTrades();
    else
      {
       datetime now=TimeCurrent();int interval=PeriodSeconds(exitTimeFrame);if(interval<1)interval=60;
       if(lastExitManageTime==0 || now-lastExitManageTime>=interval){lastExitManageTime=now;manageOpenPositions();}
      }
    // Management and OCO cleanup always run, even when the spread blocks new entries.
-   if(DeleteOppositePending)DeleteOppositePendingOrders();
+   if(RebuildOCOEnabled())DeleteOppositePendingOrders();
    TrackEquityAndDD();
    g_rebuildStatus="READY";
    double point=MarketInfo(g_symbol,MODE_POINT),ask=MarketInfo(g_symbol,MODE_ASK),bid=MarketInfo(g_symbol,MODE_BID);
@@ -260,6 +316,8 @@ void RebuildTick()
    datetime bar=iTime(g_symbol,Period(),0);
    if(bar<=0){g_rebuildStatus="WAITING FOR HISTORY";UpdateStatus();PanelDraw(false);return;}
    if(OneEntryPerBar && bar==g_lastBarTime){UpdateStatus();PanelDraw(false);return;}
+   if(RebuildMultiMode())
+     {RebuildScanMultipleLevels();UpdateStatus();PanelDraw(false);return;}
    double upper=FindFractal(MODE_UPPER),lower=FindFractal(MODE_LOWER);
    if(upper<=0 || lower<=0){g_rebuildStatus="WAITING FOR FRACTALS";UpdateStatus();PanelDraw(false);return;}
    if(OneEntryPerBar)g_lastBarTime=bar; // One evaluation per bar, not an account-wide fill guarantee.
