@@ -37,8 +37,10 @@ def render():
         source=re.sub(r'^(?:void|bool|double|int)\s+'+name+r'\([^\n]*\);\n','',source,flags=re.M)
     source=replace_function(source,'OnInit','int OnInit()\n  {\n   return RebuildInit();\n  }')
     source=replace_function(source,'OnTick','void OnTick()\n  {\n   RebuildTick();\n  }')
-    source=replace_function(source,'OnTimer','void OnTimer()\n  {\n   // Display only: no order submission or management here.\n   UpdateStatus();PanelDraw(false);\n  }')
+    source=replace_function(source,'OnTimer','void OnTimer()\n  {\n   // Display only: no order submission or management here.\n   RebuildRefreshDisplay();\n  }')
     source=source.replace('void OnDeinit(const int reason)\n  {','void OnDeinit(const int reason)\n  {\n   if(ShowStatusComment) Comment("");')
+    source=source.replace('   if(id==CHARTEVENT_MOUSE_MOVE)',
+                          '   if(RebuildSuppressTesterDisplay())return;\n   if(id==CHARTEVENT_MOUSE_MOVE)')
     # Both management options honor the user's existing BE/trailing switches.
     source=source.replace('if(favorablePct >= beTrigger)','if(UseBreakEven && favorablePct >= beTrigger)')
     source=source.replace('if(favorablePct >= trTrigger && favorablePct <= maxTrailPct)',
@@ -57,7 +59,7 @@ def render():
     source=source.replace('IntegerToString(pendingBuy+pendingSell),UiAmber());',
                           'IntegerToString(pendingBuy+pendingSell)+"/"+IntegerToString(MaxPendingOrders),UiAmber());')
     source=source.replace('filterMatchMode = MATCH_MAGIC_OR_COMMENT','filterMatchMode = MATCH_MAGIC_ONLY')
-    source=source.replace('#property version     "6.750"','#property version     "1.122"')
+    source=source.replace('#property version     "6.750"','#property version     "1.123"')
     source=source.replace('#property description "gold X9 Full Focus design 4 + four themes + broker-data chart"',
                           '#property description "Independent MT4 Fractals rebuild + Raised Solid HUD + single/multi Fractals + POINTS/PERCENT management; demo test first."')
     source='''// Independent MT4 reconstruction; NOT the original video's source code.

@@ -2,7 +2,7 @@
 
 ## Independent Fractals rebuild (MT4)
 
-**[gold_x9_Rebuild_Raised.mq4](gold_x9_Rebuild_Raised.mq4)** — v1.122: the supplied Fractals/pending-entry reconstruction with the Raised Solid interface, tracking, open/pending limit counters, and four `ManagementMode` choices: single-level POINTS/PERCENT and multi-level POINTS/PERCENT. MULTI scans distinct Fractal prices without duplicate live entry levels and permits both BUY and SELL. New installations default to MULTI POINTS, 60-minute pending expiry and a five-order pending cap per side. Read **[REBUILD_RAISED.md](REBUILD_RAISED.md)** for settings, OCO/limit corrections, safety differences and required demo checks. This is a separate EA, not a replacement of the existing MT4/MT5 files.
+**[gold_x9_Rebuild_Raised.mq4](gold_x9_Rebuild_Raised.mq4)** — v1.123: the supplied Fractals/pending-entry reconstruction with the Raised Solid interface, tracking, open/pending limit counters, and four `ManagementMode` choices: single-level POINTS/PERCENT and multi-level POINTS/PERCENT. MULTI scans distinct Fractal prices without duplicate live entry levels and permits both BUY and SELL. New installations default to MULTI POINTS, 60-minute pending expiry and a five-order pending cap per side. `TesterFastMode=true` suppresses tester drawing only; set `TesterDashboardFrom` to resume the UI at a simulated server date, or disable fast mode to see it throughout. Read **[REBUILD_RAISED.md](REBUILD_RAISED.md)** for settings, OCO/limit corrections, safety differences and required demo checks. This is a separate EA, not a replacement of the existing MT4/MT5 files.
 
 ## MT5 hedging version
 

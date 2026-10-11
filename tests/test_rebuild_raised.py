@@ -30,6 +30,15 @@ class RebuildRaisedTests(unittest.TestCase):
         for name in ['OrderSend','OrderModify','OrderDelete','RebuildTick','manageOpenPositions']:
             self.assertNotIn(name,timer)
 
+    def test_tester_gate_is_display_only(self):
+        gate=ENGINE.split('void RebuildRefreshDisplay(')[1].split('void UpdateStatus()')[0]
+        self.assertIn('if(RebuildSuppressTesterDisplay())return;',gate)
+        for op in ('OrderSend(', 'OrderModify(', 'OrderDelete(', 'ManageOpenTrades(', 'manageOpenPositions('):
+            self.assertNotIn(op,gate)
+        tick=ENGINE.split('void RebuildTick()')[1]
+        self.assertNotIn('if(RebuildSuppressTesterDisplay())return;',tick)
+        self.assertIn('RebuildExpirePendingOrders()',tick)
+
     def test_table_sorts_only_nontrivial_arrays(self):
         for array in ('tickets','pendingTickets'):
             self.assertIn('if(ArraySize('+array+')>1) ArraySort('+array+');',SOURCE)
@@ -75,6 +84,7 @@ bool testing=false,symbolOK=true,sendOK=true,modifyOK=true,marginOK=true,deleteO
 datetime lastExpiration=0;
 double bid=2000,ask=2000.20,point=.01,tick=.01,lotStep=.01,minLot=.01,maxLot=100,balance=10000;
 bool useLevels=false;map<int,double> upperLevels,lowerLevels;
+int uiCalls=0;unsigned int uiClock=1000;bool visual=true;
 int availableBars=200;datetime now=1000,barTime=900;double upper=2010,lower=1990;int lastError=0;
 int OrdersTotal(){return orders.size();}
 bool OrderSelect(int v,int mode,int){if(mode==SELECT_BY_TICKET){for(int i=0;i<int(orders.size());i++)if(orders[i].ticket==v){selected=i;return true;}return false;}if(v<0||v>=int(orders.size()))return false;selected=v;return true;}
@@ -106,20 +116,22 @@ int StringLen(string s){return s.size();}string IntegerToString(int v){return to
 int Period(){return 5;}int PeriodSeconds(int){return 60;}datetime TimeCurrent(){return now;}
 datetime iTime(string,int,int){return barTime;}int iBars(string,int){return availableBars;}
 double iFractals(string,int,int mode,int shift){if(useLevels)return mode==MODE_UPPER?upperLevels[shift]:lowerLevels[shift];return shift==2?(mode==MODE_UPPER?upper:lower):0;}
-string Symbol(){return "XAUUSD";}bool IsTesting(){return testing;}bool SymbolSelect(string,bool){return symbolOK;}
+string Symbol(){return "XAUUSD";}unsigned int GetTickCount(){return uiClock;}bool IsVisualMode(){return visual;}bool IsTesting(){return testing;}bool SymbolSelect(string,bool){return symbolOK;}
 double SymbolAsk(){return ask;}double SymbolBid(){return bid;}
 double SymbolPoint(){return point;}int SymbolDigits(){return 2;}double SymbolStopsLevel(){return point*50;}double SymbolFreezeLevel(){return point*30;}
 void PanelRememberTrail(int,double){trailCalls++;}void manageOpenPositions();
 void ApplyChartStyle(){}void TagDeleteAll(){}void TrackEquityAndDD(){}void RefreshStats(){}
 void ObjectsDeleteAll(int,string){}void HudLayout(){}void HudCreate(){}void SeedEquityHistory(){}
-void EqDraw(){}void PanelDraw(bool){}bool PanelEnabled(){return true;}void EventSetTimer(int){}
-void HudTick(bool){}void ObjectSetString(int,string,int,string){}void HudSetText(string,string,int){}
+void EqDraw(){}void PanelDraw(bool){uiCalls++;}bool PanelEnabled(){return true;}void EventSetTimer(int){}
+void HudTick(bool){uiCalls++;}void ObjectSetString(int,string,int,string){}void HudSetText(string,string,int){}
 int UiGood(){return 1;}int UiAmber(){return 2;}void UpdateStatus();
+bool RebuildSuppressTesterDisplay();void RebuildRefreshDisplay(bool force=false);
 '''
         main=r'''
 void reset(){orders.clear();sendCalls=modifyCalls=trailCalls=percentCalls=deleted=0;sendOK=modifyOK=marginOK=true;
  g_symbol="XAUUSD";g_lastBarTime=0;lastExitManageTime=0;ManagementMode=MANAGEMENT_POINTS;UseRiskPercent=false;
  PendingExpiryMinutes=60;MaxPendingPerSide=5;denyExpiration=false;deleteOK=true;lastExpiration=0;
+ testing=false;visual=true;TesterFastMode=true;TesterDashboardFrom=0;uiCalls=0;uiClock=1000;g_rebuildDisplayStarted=false;g_rebuildDisplayMs=0;
  MaxMarketPositions=10;MaxPendingOrders=10;DeleteOppositePending=true;OneEntryPerBar=true;EnableBuy=EnableSell=true;
  UseBreakEven=UseTrailingStop=true;enablePartialPay=false;enableAgedLossCut=true;for(auto &k:g_partialKeys)k="";bid=2000;ask=2000.20;point=tick=.01;lotStep=minLot=.01;maxLot=100;
  useLevels=false;upperLevels.clear();lowerLevels.clear();
@@ -235,6 +247,18 @@ int main(){
  deleteOK=true;assert(RebuildExpirePendingOrders()&&orders.size()==3&&deleted==1);
  reset();PendingExpiryMinutes=-1;assert(!RebuildParametersValid());PendingExpiryMinutes=60;
  MaxPendingPerSide=-1;assert(!RebuildParametersValid());MaxPendingPerSide=5;
+ // Fast tester rendering must not suppress trading, stop management or expiry.
+ reset();testing=true;TesterFastMode=true;assert(RebuildInit()==INIT_SUCCEEDED&&uiCalls==0);
+ orders={{1,OP_BUY,MagicNumber,"XAUUSD",1900,1850,2100,.01}};
+ RebuildTick();assert(modifyCalls==1&&sendCalls==1&&uiCalls==0);
+ now+=3600;RebuildTick();assert(deleted==1&&uiCalls==0);
+ TesterDashboardFrom=now+100;RebuildRefreshDisplay();assert(uiCalls==0);
+ now+=100;RebuildRefreshDisplay();assert(uiCalls>0&&g_rebuildDisplayStarted);
+ int previousUI=uiCalls;RebuildRefreshDisplay();assert(uiCalls==previousUI);
+ uiClock+=250;RebuildRefreshDisplay();assert(uiCalls>previousUI);
+ reset();testing=true;TesterFastMode=false;RebuildRefreshDisplay();assert(uiCalls>0);
+ reset();testing=true;visual=false;TesterFastMode=false;RebuildRefreshDisplay();assert(uiCalls==0);
+ reset();TesterFastMode=true;RebuildRefreshDisplay();assert(uiCalls>0); // live/demo UI unaffected
  reset();TradeSymbol="OTHER";testing=true;assert(RebuildInit()==INIT_FAILED);testing=false;TradeSymbol="";
  ManagementMode=MANAGEMENT_PERCENT;StopLossPoints=0;assert(RebuildParametersValid()); // inactive points settings ignored
  ManagementMode=MANAGEMENT_POINTS;assert(!RebuildParametersValid());StopLossPoints=5000;
@@ -250,7 +274,7 @@ int main(){
         manager=manager.replace('void manageOpenPositions()\n  {','void manageOpenPositions()\n  {\n   percentCalls++;')
         with tempfile.TemporaryDirectory() as td:
             path=Path(td)
-            (path/'engine.cpp').write_text(stub+INPUTS.replace('input ','')+ENGINE+manager+main)
+            (path/'engine.cpp').write_text(stub+INPUTS.replace('input ','')+ENGINE.replace('void RebuildRefreshDisplay(bool force=false)', 'void RebuildRefreshDisplay(bool force)')+manager+main)
             subprocess.run(['g++','-std=c++17',str(path/'engine.cpp'),'-o',str(path/'engine')],check=True)
             subprocess.run([str(path/'engine')],check=True)
 

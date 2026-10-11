@@ -1,4 +1,4 @@
-# Independent MT4 Fractals rebuild + Raised Solid / v1.122
+# Independent MT4 Fractals rebuild + Raised Solid / v1.123
 
 **File: [gold_x9_Rebuild_Raised.mq4](gold_x9_Rebuild_Raised.mq4)**
 
@@ -89,7 +89,7 @@ Points are broker points, not pips. For example, 5000 points is a price distance
 1. Copy **gold_x9_Rebuild_Raised.mq4** into `MQL4/Experts`.
 2. Compile in a current **MetaEditor 4** with standard `Canvas/Canvas.mqh`; no custom includes or images need installation. This file is MT4, not MT5.
 3. First use a demo account / visual Strategy Tester, with the broker's gold symbol and intended timeframe.
-4. Verify the Journal line: `Gold X9 Rebuild Raised v1.122 | MULTI POINTS` (or the selected mode).
+4. Verify the Journal line: `Gold X9 Rebuild Raised v1.123 | MULTI POINTS` (or the selected mode).
 5. Verify all four mode settings against actual entry/SL/TP prices, BE/trailing, and successful TRAIL updates. Test failed modifications and freeze restrictions.
 6. Verify max pending=1, max open/pending=0, spread filtering while management continues, OCO with single/mixed directions, and unrelated magic isolation.
 7. Test risk lots versus broker specs and below-minimum risk rejection. Test partial-pay/aged-loss only with controlled demo positions.
@@ -107,7 +107,7 @@ python tools/build_rebuild_mt4.py --check
 python -m unittest discover -s tests -v
 ```
 
-The suite has 20 tests. New coverage executes the reconstruction engine and the actual reused percentage manager against C++ terminal stubs, tests both price formulas, mode routing, volume/risk sizing, OCO, combined limits, no-repeat-per-bar behavior, spread filtering, failed modification/trailing evidence, partial pay and symbol validation. The existing chart/four-theme geometry tests are also run against the generated rebuild source.
+The suite has 21 tests. New coverage executes the reconstruction engine and the actual reused percentage manager against C++ terminal stubs, tests both price formulas, mode routing, volume/risk sizing, OCO, combined limits, no-repeat-per-bar behavior, spread filtering, failed modification/trailing evidence, partial pay and symbol validation. The existing chart/four-theme geometry tests are also run against the generated rebuild source.
 
 ## v1.110 — multiple Fractal levels inside ManagementMode
 
@@ -153,3 +153,12 @@ Made the final conversion from 64-bit expiration arithmetic to `datetime` explic
 ## v1.122 — empty trade-table sorting
 
 Guard both ArraySort calls in the trade table with ArraySize > 1. MT4 reports incorrect start position 0 when an empty market or pending list is sorted. Empty and single-item lists require no sorting; multi-item lists retain the previous ordering. Regression tests now reject empty/singleton sorts in the renderer stub and exercise empty, market-only, pending-only and mixed snapshots. This is a display-only correction; entry, trailing, expiry and quotas are unchanged. Native MT4 tester verification is still needed; no performance benchmark is claimed.
+
+## v1.123 — tester display fast mode
+
+- `TesterFastMode=true` (default) suppresses dashboard creation, chart drawing, UI status writes and UI-only history/stat scans in the Strategy Tester. The normal trading/management/expiry path still processes ticks; no tester ticks, stops or orders are skipped. Live/demo rendering is unaffected.
+- `TesterDashboardFrom=0` leaves the tester dashboard hidden throughout. To resume it automatically, enter a **simulated server timestamp**, for example `2026.01.07 00:00`. The first tick/render opportunity at or after it creates the full dashboard and reconstructs closed history. This is independent of MT4's Skip to control; the EA cannot read or set that control.
+- For the dashboard throughout a visual test, set `TesterFastMode=false`. Nonvisual tests always omit the UI. Ordinary display work (including status object writes that used to run every tick) is now gated to at most once per 250 wall-clock milliseconds, apart from explicit UI interactions. Trade timing is unchanged.
+- Tester fast mode does not remove MT4's own chart/tester work or execution logs. There is no measured native performance guarantee or proof that all date-specific slowdowns are fixed. Slowdowns can also depend on tick/history data, visual-test speed settings and terminal workload.
+- Use Every tick for comparison. Do not switch to Open prices only just to accelerate this strategy: break-even, trailing and pending fills depend on intrabar ticks.
+- Regression fixtures verify that entries, trailing and expiry still run while the UI is suppressed, that UI starts at the specified test date, that nonvisual mode remains quiet, that normal rendering is throttled, and that live/demo rendering remains available.

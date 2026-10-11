@@ -24,6 +24,8 @@ input int FractalLookbackBars=100;
 input int EntryBufferPoints=30;
 input bool DeleteOppositePending=false;    // Single-level modes only; MULTI always allows both sides
 input bool OneEntryPerBar=true;
+input bool TesterFastMode=true;           // Tester only: suspend dashboard rendering, not trading
+input datetime TesterDashboardFrom=0;     // Server/test time to show UI again; 0 = hidden throughout
 input bool ShowStatusComment=false;        // Optional native text; dashboard replaces it by default
 input bool UseBreakEven=true;              // Applies in either management mode
 input bool UseTrailingStop=true;           // Applies in either management mode

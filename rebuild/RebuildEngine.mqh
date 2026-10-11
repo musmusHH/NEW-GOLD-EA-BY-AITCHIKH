@@ -2,6 +2,8 @@
 string g_symbol;
 datetime g_lastBarTime=0;
 string g_rebuildStatus="READY";
+bool g_rebuildDisplayStarted=false;
+uint g_rebuildDisplayMs=0;
 
 bool RebuildMultiMode()
   {
@@ -324,16 +326,39 @@ int RebuildInit()
    g_lastBarTime=0;lastExitManageTime=0;g_dayKey=0;g_ddHalted=false;
    g_peakEquityLab=0;g_equityHalted=false;g_probationWeek=false;g_lotMultiplier=1;
    for(int i=0;i<200;i++)g_partialKeys[i]="";
-   if(applyChartStyle)ApplyChartStyle();
-   TagDeleteAll();TrackEquityAndDD();RefreshStats();
-   ObjectsDeleteAll(0,HUD_PREFIX);
-   if(showDashboardPanel){HudLayout();HudCreate();HudLayout();}
-   if(showEquityCurve)SeedEquityHistory();
-   HudTick(true);UpdateStatus();EqDraw();PanelDraw(true);
-   if(PanelEnabled())EventSetTimer(1);
-   Print("Gold X9 Rebuild Raised v1.122 | ",RebuildModeLabel()," | ",g_symbol);
+   g_rebuildDisplayStarted=false;g_rebuildDisplayMs=0;
+   TagDeleteAll();TrackEquityAndDD();
+   RebuildRefreshDisplay(true);
+   if(RebuildSuppressTesterDisplay())
+      Print("Rebuild tester fast display mode: trading still runs on every tick. Dashboard resume time=",TesterDashboardFrom);
+   Print("Gold X9 Rebuild Raised v1.123 | ",RebuildModeLabel()," | ",g_symbol);
    return INIT_SUCCEEDED;
   }
+bool RebuildSuppressTesterDisplay()
+  {
+   if(!IsTesting())return false;
+   if(!IsVisualMode())return true;
+   return TesterFastMode && (TesterDashboardFrom==0 || TimeCurrent()<TesterDashboardFrom);
+  }
+void RebuildRefreshDisplay(bool force=false)
+  {
+   if(RebuildSuppressTesterDisplay())return;
+   uint now=GetTickCount();
+   if(!force && g_rebuildDisplayStarted && now-g_rebuildDisplayMs<250)return;
+   g_rebuildDisplayMs=now;
+   if(!g_rebuildDisplayStarted)
+     {
+      if(applyChartStyle)ApplyChartStyle();
+      ObjectsDeleteAll(0,HUD_PREFIX);
+      if(showDashboardPanel){HudLayout();HudCreate();HudLayout();}
+      HudTick(true);
+      g_rebuildDisplayStarted=true;
+      if(PanelEnabled())EventSetTimer(1);
+      force=true;
+     }
+   UpdateStatus();PanelDraw(force);
+  }
+
 void UpdateStatus()
   {
    HudTick(false);
@@ -364,23 +389,23 @@ void RebuildTick()
      {
       // Do not immediately replace locally expired orders in this same evaluation.
       if(OneEntryPerBar)g_lastBarTime=iTime(g_symbol,Period(),0);
-      g_rebuildStatus="PENDING EXPIRED";UpdateStatus();PanelDraw(false);return;
+      g_rebuildStatus="PENDING EXPIRED";RebuildRefreshDisplay();return;
      }
    double point=MarketInfo(g_symbol,MODE_POINT),ask=MarketInfo(g_symbol,MODE_ASK),bid=MarketInfo(g_symbol,MODE_BID);
-   if(point<=0 || ask<=0 || bid<=0){g_rebuildStatus="WAITING FOR QUOTE";UpdateStatus();PanelDraw(false);return;}
+   if(point<=0 || ask<=0 || bid<=0){g_rebuildStatus="WAITING FOR QUOTE";RebuildRefreshDisplay();return;}
    if(MaxSpreadPoints>0 && (ask-bid)/point>MaxSpreadPoints+1e-6)
-     {g_rebuildStatus="SPREAD FILTER";UpdateStatus();PanelDraw(false);return;}
+     {g_rebuildStatus="SPREAD FILTER";RebuildRefreshDisplay();return;}
    if(CountMarketPositions()>=MaxMarketPositions || CountPendingOrders()>=MaxPendingOrders)
-     {g_rebuildStatus="LIMIT REACHED";UpdateStatus();PanelDraw(false);return;}
+     {g_rebuildStatus="LIMIT REACHED";RebuildRefreshDisplay();return;}
    datetime bar=iTime(g_symbol,Period(),0);
-   if(bar<=0){g_rebuildStatus="WAITING FOR HISTORY";UpdateStatus();PanelDraw(false);return;}
-   if(OneEntryPerBar && bar==g_lastBarTime){UpdateStatus();PanelDraw(false);return;}
+   if(bar<=0){g_rebuildStatus="WAITING FOR HISTORY";RebuildRefreshDisplay();return;}
+   if(OneEntryPerBar && bar==g_lastBarTime){RebuildRefreshDisplay();return;}
    if(RebuildMultiMode())
-     {RebuildScanMultipleLevels();UpdateStatus();PanelDraw(false);return;}
+     {RebuildScanMultipleLevels();RebuildRefreshDisplay();return;}
    double upper=FindFractal(MODE_UPPER),lower=FindFractal(MODE_LOWER);
-   if(upper<=0 || lower<=0){g_rebuildStatus="WAITING FOR FRACTALS";UpdateStatus();PanelDraw(false);return;}
+   if(upper<=0 || lower<=0){g_rebuildStatus="WAITING FOR FRACTALS";RebuildRefreshDisplay();return;}
    if(OneEntryPerBar)g_lastBarTime=bar; // One evaluation per bar, not an account-wide fill guarantee.
    if(RebuildDirectionAllowed(OP_BUYSTOP))PlacePending(OP_BUYSTOP,upper+EntryBufferPoints*point);
    if(RebuildDirectionAllowed(OP_SELLSTOP))PlacePending(OP_SELLSTOP,lower-EntryBufferPoints*point);
-   UpdateStatus();PanelDraw(false);
+   RebuildRefreshDisplay();
   }
